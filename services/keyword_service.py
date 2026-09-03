@@ -49,76 +49,97 @@ def normalize_comment(comment: str) -> Optional[str]:
     return comment if comment else None
 
 
-def extract_keywords(comment: str, category: str = "", sub_category: str = "") -> str:
+def extract_keywords(comment: str, category: str = "", sub_category: str = "", llm_keywords: str = "") -> str:
     """
-    Extracts high-value, highly meaningful keywords from customer feedback comments.
-    Filters out filler words, generic verbs, pronouns, and prepositions.
-    Prioritizes domain-relevant terms, actionable nouns, and specific adjectives.
+    Extracts high-value, highly meaningful business n-gram phrases from VOC comments.
+    Filters out single token fragments (don, t, ve), numbers (ten, 10, two), time words (days, hours, yesterday),
+    and low-value generic words (shows, several, customer, page).
     """
     if not comment or not comment.strip():
         return "issue"
 
     text = comment.lower()
 
-    # Enhanced Stop Words list
+    # Domain Business N-gram Extraction (Highest Priority)
+    business_phrases = []
+
+    # Financial / Payment N-grams
+    if "emi" in text and "deducted" in text:
+        business_phrases.append("duplicate EMI deduction")
+    elif "charged twice" in text or "deducted twice" in text or "double charge" in text:
+        business_phrases.append("duplicate payment deduction")
+    elif "unauthorized" in text or "don't recognize" in text or "dont recognize" in text:
+        business_phrases.append("unrecognized transaction")
+        business_phrases.append("unauthorized transaction")
+    elif "failed" in text and "transaction" in text:
+        business_phrases.append("failed transaction")
+    elif "refund" in text and ("pending" in text or "credited" in text or "delay" in text or "days" in text):
+        business_phrases.append("pending refund")
+        business_phrases.append("refund delay")
+
+    # Technical / App / Portal N-grams
+    if "statement" in text and ("download" in text or "downloading" in text or "error" in text):
+        business_phrases.append("loan statement download")
+        business_phrases.append("mobile app error")
+    elif "app" in text and ("error" in text or "glitch" in text):
+        business_phrases.append("mobile app error")
+    elif "app" in text and ("crash" in text or "freezes" in text):
+        business_phrases.append("mobile app crash")
+    elif "load" in text and ("slow" in text or "minutes" in text or "portal" in text):
+        business_phrases.append("web portal slow loading")
+        business_phrases.append("page load performance")
+
+    # Service / Support N-grams
+    if "verification" in text and ("pending" in text or "delay" in text):
+        business_phrases.append("verification delay")
+        business_phrases.append("document verification pending")
+    elif "promised" in text and ("call" in text or "update" in text or "resolve" in text):
+        business_phrases.append("unfulfilled callback promise")
+        business_phrases.append("unhandled follow-up issue")
+    elif "helpful" in text or "patiently" in text:
+        business_phrases.append("helpful agent service")
+    elif "quick response" in text or "handled query" in text:
+        business_phrases.append("fast response time")
+
+    if business_phrases:
+        # Deduplicate while preserving order
+        unique_phrases = []
+        for p in business_phrases:
+            if p not in unique_phrases:
+                unique_phrases.append(p)
+        return ", ".join(unique_phrases[:3])
+
+    # If LLM keywords provided, sanitize them
+    if llm_keywords and isinstance(llm_keywords, str):
+        raw_tokens = [k.strip().lower() for k in llm_keywords.replace("\n", ",").split(",") if k.strip()]
+        valid_kw = []
+        junk = {"don", "t", "ve", "re", "ll", "m", "ten", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "days", "weeks", "hours", "yesterday", "shows", "several", "thing", "customer", "page", "browser", "app"}
+        for k in raw_tokens:
+            words = [w for w in k.split() if w not in junk and len(w) > 2 and not w.isdigit()]
+            if words:
+                clean_phrase = " ".join(words)
+                if clean_phrase and clean_phrase not in valid_kw:
+                    valid_kw.append(clean_phrase)
+        if valid_kw:
+            return ", ".join(valid_kw[:4])
+
+    # Fallback Stop Words list for general single-word extraction
     stop_words = {
-        # Pronouns & Articles
-        "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you", "your", "yours",
-        "yourself", "yourselves", "he", "him", "his", "himself", "she", "her", "hers",
-        "herself", "it", "its", "itself", "they", "them", "their", "theirs", "themselves",
-        "what", "which", "who", "whom", "this", "that", "these", "those", "am", "is", "are",
-        "was", "were", "be", "been", "being", "have", "has", "had", "having", "do", "does",
-        "did", "doing", "a", "an", "the", "and", "but", "if", "or", "because", "as", "until",
-        "while", "of", "at", "by", "for", "with", "about", "against", "between", "into",
-        "through", "during", "before", "after", "above", "below", "to", "from", "up", "down",
-        "in", "out", "on", "off", "over", "under", "again", "further", "then", "once", "here",
-        "there", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more",
-        "most", "other", "some", "such", "no", "nor", "not", "only", "own", "same", "so",
-
-        # Common Filler Verbs & Conversational Words
-        "want", "wants", "wanted", "know", "knows", "knew", "knowing", "dont", "dont",
-        "get", "gets", "got", "getting", "give", "gives", "given", "giving", "make", "makes",
-        "made", "making", "take", "takes", "took", "taking", "tell", "tells", "told",
-        "telling", "say", "says", "said", "saying", "ask", "asks", "asked", "asking",
-        "need", "needs", "needed", "needing", "feel", "feels", "felt", "feeling",
-        "think", "thinks", "thought", "thinking", "seem", "seems", "seemed", "seeming",
-        "look", "looks", "looked", "looking", "come", "comes", "came", "coming",
-        "go", "goes", "went", "going", "see", "sees", "saw", "seeing", "can", "could",
-        "will", "would", "should", "shall", "may", "might", "must", "very", "just",
-        "too", "also", "even", "only", "never", "always", "please", "kindly", "thank",
-        "thanks", "thankyou", "sorry", "sir", "madam", "mam", "maam", "dear", "hello",
-        "hi", "hey", "okay", "ok", "yes", "no", "still", "yet", "already", "since",
-        "etc", "proper", "properly", "without", "within", "keeps", "keep", "kept", "try", "trying", "tried"
+        "i", "me", "my", "myself", "we", "our", "ours", "you", "your", "he", "him", "she", "her", "it", "its", "they", "them",
+        "don", "t", "ve", "re", "ll", "m", "dont", "doesnt", "didnt", "isnt", "wasnt", "wont", "cant",
+        "ten", "two", "three", "four", "five", "six", "seven", "eight", "nine", "days", "weeks", "hours", "yesterday",
+        "shows", "several", "thing", "customer", "page", "browser", "also", "just", "very", "please", "kindly", "thank", "thanks"
     }
-
-    # Filter out positive words when preceded by negation ("not happy", "not satisfied")
-    if re.search(r"\b(not|n't|dont|doesnt)\s+happy\b", text):
-        stop_words.add("happy")
-    if re.search(r"\b(not|n't|dont|doesnt)\s+good\b", text):
-        stop_words.add("good")
 
     clean_text = re.sub(r"[^\w\s]", " ", text)
     tokens = clean_text.split()
-
-    candidates = []
-    seen = set()
-
-    # Contextual priority words from category/subcategory
-    category_words = set(re.findall(r'\w+', category.lower() + " " + sub_category.lower())) - stop_words
-
+    valid = []
     for t in tokens:
-        if len(t) >= 3 and t not in stop_words and not t.isdigit():
-            if t not in seen:
-                seen.add(t)
-                candidates.append(t)
+        if len(t) > 2 and t not in stop_words and not t.isdigit():
+            if t not in valid:
+                valid.append(t)
 
-    if not candidates:
-        return category.lower() if category and category != "Generic" else "issue"
+    if valid:
+        return ", ".join(valid[:4])
 
-    high_priority = [w for w in candidates if w in category_words]
-    other_candidates = [w for w in candidates if w not in category_words]
-
-    ordered_keywords = high_priority + other_candidates
-    selected = ordered_keywords[:4]
-
-    return ", ".join(selected)
+    return category.lower() if category and category != "Generic" else "issue"

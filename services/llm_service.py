@@ -143,66 +143,72 @@ def build_llm_prompt(comment: str, category_mapping: Dict[str, list]) -> str:
 AVAILABLE CATEGORIES & SUB-CATEGORIES FROM DATABASE:
 {category_mapping_text}
 
-CRITICAL CONFUSION PAIRS DISAMBIGUATION:
-1. App Crash VS Transaction Failure:
-   - If app closes/crashes/freezes -> Mobile App & Technical -> App Crash (even if during transaction).
-   - If app stays open but money transfer/payment fails -> Payment & Transactions -> Failed Transaction.
-2. Verification Delay VS Document Upload Issues:
-   - Verification Delay = document/application was submitted but verification is pending or taking too long.
-   - Document Upload Issues = customer cannot upload/submit a document or document was rejected.
-3. Duplicate Deduction VS Charge Dispute VS Refund Request:
-   - If customer says "charged twice" / "deducted twice" -> Payment & Transactions -> Duplicate Deduction.
-   - If customer disputes an unrecognized/incorrect charge -> Billing & Charges -> Charge Dispute / Billing Error.
-   - If customer asks for money back -> Payment & Transactions -> Refund Request / Refund Issue.
-4. Callback Promise / Follow-Up Issue VS Notifications:
-   - If customer says "agent promised a callback but nobody called" or "waiting for response/call" -> Customer Service -> Follow-up Issue.
-   - NEVER classify callback promises or unhandled calls as Communications & Notifications!
-5. Rude Behaviour VS Aggressive Behaviour:
-   - Rude Behaviour = disrespectful, impolite, or unprofessional agent communication.
-   - Aggressive Behaviour = shouting, hostile, intimidating behavior, or abruptly hanging up.
-6. Mobile & Email Update VS Web Portal:
-   - If customer asks to update mobile number/email -> Account & Profile Services -> Mobile & Email Update.
-   - Do NOT classify mobile/email updates as generic Web Portal!
-7. Response Time VS Delivery Experience:
-   - If customer praises or complains about query response speed -> Customer Service -> Response Time.
-   - Do NOT introduce 'delivery' or 'accessibility' unless explicitly mentioned!
-8. Unhelpful Agent VS Call Disconnect:
-   - If agent was unhelpful/poor service -> Customer Service -> Unhelpful Agent.
-   - If call dropped/disconnected unexpectedly -> Customer Service -> Call Disconnect.
+CRITICAL CONFUSION PAIRS DISAMBIGUATION (WITH POSITIVE & NEGATIVE EXAMPLES):
+1. App Error VS App Crash VS Transaction Failure:
+   - App Error: An error message or glitch occurs while using the app (e.g. "App shows an error when downloading statement").
+     * Positive Example: "Mobile app shows an error when downloading loan statement" -> Mobile App & Technical -> App Error.
+     * DO NOT classify statement download errors as Payment & Transactions -> Failed Transaction!
+   - App Crash: App closes, freezes, or exits unexpectedly.
+   - Transaction Failure: Payment or money transfer fails to complete after clicking pay.
 
-13-STEP EXECUTION PROCESS:
-STEP 1: Read the customer comment.
-STEP 2: Gibberish detection.
-STEP 3: Identify the PRIMARY customer issue.
-STEP 4: Select the category that best represents the PRIMARY issue.
-STEP 5: Select the most specific sub-category for that issue.
-STEP 6: If no sub-category accurately matches, use Other/Generic. NEVER force an unrelated sub-category.
-STEP 7: Determine sentiment.
-STEP 8: Determine emotion based only on the customer's language.
-STEP 9: Determine priority (Positive feedback or routine query MUST be Low priority).
-STEP 10: Extract 3-6 meaningful keywords.
-STEP 11: Generate an observation using ONLY information present in the customer comment.
-STEP 12: Generate an organization-facing recommendation that addresses the actual issue.
-STEP 13: Perform a final consistency check (Comment -> Issue -> Category -> Sub-Category -> Observation -> Recommendation).
+2. Verification Delay VS Document Rejection / Upload Issues:
+   - Verification Delay: Documents were submitted, but verification is pending or taking too long.
+     * Positive Example: "Submitted all required documents, verification is still pending" -> KYC & Verification -> Verification Delay.
+     * DO NOT classify submitted pending documents as Document Rejection!
+   - Document Rejection: Document was rejected, invalid, or unreadable.
 
-17 STRICT GROUNDING RULES:
-1. Never classify using a keyword alone.
-2. Never force a customer comment into an unrelated category.
-3. The primary issue determines the sub-category.
-4. Category and sub-category must be supported by the customer comment.
-5. Observation MUST be generated directly from customer comment, NOT from category name.
-6. Recommendation must be based on the actual issue and directed to the organization.
-7. Never invent facts.
-8. Never assume an action has already occurred.
-9. "Customer requested a refund" does NOT mean "refund completed."
-10. "Customer alleges fraud" does NOT mean "fraud confirmed."
-11. A mention of "portal" does NOT automatically mean Web Portal.
-12. A mention of "transaction" does NOT automatically mean Transaction Failure.
-13. A mention of "agent" does NOT automatically mean Agent Behaviour.
-14. Positive feedback MUST have LOW priority unless an explicit critical threat is present.
-15. If no taxonomy item accurately matches, return Generic/Other.
-16. Never invent a sub-category simply because one is listed.
-17. Do NOT use concepts in observation/recommendation that are absent from the customer comment.
+3. Web Portal Slow VS Web Portal Error:
+   - Web Portal Slow: Slow page loading, taking several minutes, lagging screens.
+     * Positive Example: "Taking several minutes to load every page" -> Digital / Web Portal -> Web Portal Slow (Sentiment: Negative, Emotion: Frustrated, Priority: medium).
+     * DO NOT classify slow loading as Web Portal Error!
+   - Web Portal Error: 504 gateway timeout, HTTP 500 error code, broken link.
+
+4. Unauthorized Transaction VS Charge Dispute:
+   - Unauthorized Transaction: Customer does not recognize transaction or believes card was compromised.
+     * Positive Example: "I don't recognize this transaction... I believe it is unauthorized" -> Payment & Transactions -> Unauthorized Transaction.
+   - Charge Dispute: Customer recognizes transaction but disagrees with fee amount or double charge.
+
+5. Duplicate Deduction:
+   - Positive Example: "My EMI was deducted twice" -> Payment & Transactions -> Duplicate Deduction.
+   - DO NOT invent "subscription" if customer mentions EMI or loan!
+
+6. Response Time VS Notification Delay:
+   - Response Time: Praise or complaint about query turnaround speed.
+     * Positive Example: "Quick response... handled my query professionally" -> Customer Service -> Response Time.
+     * DO NOT classify quick query response as Notification Delay!
+
+7. Follow-up Issue:
+   - Positive Example: "Agent promised to resolve my complaint yesterday, but no update" -> Customer Service -> Follow-up Issue.
+     * DO NOT claim "complaint was resolved" if agent only promised to resolve it!
+
+PRIMARY ISSUE & HALLUCINATION GUARD RULES:
+1. FIRST identify the PRIMARY customer issue. Select Category & Sub-Category based on the PRIMARY issue.
+2. Use ONLY facts explicitly present in the customer comment.
+3. NEVER introduce concepts like "subscription", "payment gateway", "refund", "document rejection", "transaction", "resolution" UNLESS explicitly present in the customer comment!
+4. If customer mentions "EMI deducted twice", do NOT invent "subscription".
+5. If customer mentions "downloading statement error", do NOT invent "payment gateway".
+6. Recommendation MUST be organization-facing ("The organization should..."), NEVER customer-facing ("Thank you for your feedback...").
+
+KEYWORD RULES:
+Generate 3-6 meaningful, issue-specific analytical keywords or 2-3 word business phrases.
+Prefer business concepts and issue phrases over individual common words.
+DO NOT include:
+- articles, pronouns, numbers (e.g. "ten", "two", "10")
+- time words such as "days", "yesterday", "weeks"
+- token fragments such as "don" from "don't"
+- generic words such as "shows", "customer", "thing", "good", "several"
+
+GOOD KEYWORDS EXAMPLES:
+- "duplicate EMI deduction"
+- "mobile app error"
+- "loan statement download"
+- "pending refund"
+- "slow portal loading"
+
+BAD KEYWORDS EXAMPLES:
+- "mobile, app, shows, error"
+- "refund, ten, days"
+- "don, recognize, transaction"
 
 FIELD ENUM RULES:
 - sentiment must be exactly one of: {SENTIMENTS}

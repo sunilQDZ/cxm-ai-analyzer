@@ -133,7 +133,7 @@ ExecStart=/var/www/cx_qwen_api/venv/bin/uvicorn app:app --host 0.0.0.0 --port 80
 
 To minimize unnecessary LLM invocations and save CPU cycles:
 1. **Gibberish Detection (`is_gibrish_comment`)**: Catches invalid / noisy input immediately in **<0.01s** (0 CPU LLM cost).
-2. **Positive Feedback Filter (`handle_positive_feedback`)**: Compliments and simple praise bypass full priority generation.
+2. **Positive Feedback Standardizer (`handle_positive_feedback`)**: Standardizes praise feedback to Low Priority, Positive Sentiment, Happy/Satisfied Emotion, and Organization-Facing Recommendations.
 3. **Database Category Mapping Cache**: Categories are cached in RAM with TTL (`CATEGORY_CACHE_TTL_SECONDS = 30`), avoiding repeated DB queries per request.
 
 ---

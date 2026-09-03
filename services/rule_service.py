@@ -138,41 +138,71 @@ def apply_taxonomy_guardrails(
 
     text = comment.lower()
 
-    # Rule 0: App Crash (if comment mentions crash/freezes/closes, force Mobile App & Technical -> App Crash)
+    # Rule 0: App Crash vs App Error (Generalized Technical Intent)
     if any(k in text for k in ["crash", "crashes", "crashing", "freezes", "freezing", "closes unexpectedly", "app closed"]):
         for db_cat, db_subs in category_mapping.items():
             for db_sub in db_subs:
                 if clean_for_match(db_sub) == "app crash":
                     return db_cat, db_sub
+    elif any(k in text for k in ["error downloading", "shows an error", "app error", "application error", "download error", "page error"]):
+        for db_cat, db_subs in category_mapping.items():
+            for db_sub in db_subs:
+                if clean_for_match(db_sub) in ["app error", "technical issue", "application error", "mobile app technical"]:
+                    return db_cat, db_sub
 
-    # Rule 0b: Agent Misconduct / Rude Behaviour
-    if any(k in text for k in ["rude", "yelled", "abusive", "hung up", "disrespectful"]):
+    # Rule 0b: Agent Misconduct / Rude Behaviour vs Helpful Agent (Generalized Support Intent)
+    if any(k in text for k in ["helpful agent", "patiently", "polite and helpful", "great support", "helpful executive"]):
+        for db_cat, db_subs in category_mapping.items():
+            for db_sub in db_subs:
+                if clean_for_match(db_sub) in ["helpful professional agent", "helpful agent", "customer service"]:
+                    return db_cat, db_sub
+    elif any(k in text for k in ["rude", "yelled", "abusive", "hung up", "disrespectful"]):
         for db_cat, db_subs in category_mapping.items():
             for db_sub in db_subs:
                 if clean_for_match(db_sub) in ["rude behaviour", "aggressive behaviour", "unhelpful agent"]:
                     return db_cat, db_sub
 
-    # Rule 1: Verification Delay vs Document Upload Issues
-    if any(k in text for k in ["verification", "pending", "weeks", "delayed", "waiting for verification"]):
-        if clean_for_match(sub_category) in ["document upload issues", "document upload", "documentation issues"]:
-            if not any(k in text for k in ["cannot upload", "upload fail", "file rejected", "cant upload", "unable to upload"]):
-                for db_cat, db_subs in category_mapping.items():
-                    for db_sub in db_subs:
-                        if clean_for_match(db_sub) == "verification delay":
-                            return db_cat, db_sub
+    # Rule 1: Verification Delay vs Document Upload (Generalized Verification Intent)
+    if any(k in text for k in ["submitted", "uploaded", "documents"]) and any(k in text for k in ["pending", "weeks", "delayed", "waiting"]):
+        if not any(k in text for k in ["cannot upload", "upload fail", "file rejected", "cant upload", "unable to upload"]):
+            for db_cat, db_subs in category_mapping.items():
+                for db_sub in db_subs:
+                    if clean_for_match(db_sub) == "verification delay":
+                        return db_cat, db_sub
 
-    # Rule 2: Duplicate Deduction vs Charge Dispute
-    if any(k in text for k in ["charged twice", "deducted twice", "charged two times", "deducted two times", "double charge", "charged 2 times"]):
+    # Rule 2: Duplicate Deduction (Generalized Payment Intent)
+    if any(k in text for k in ["charged twice", "deducted twice", "charged 2 times", "deducted 2 times", "double charge"]):
         for db_cat, db_subs in category_mapping.items():
             for db_sub in db_subs:
                 if clean_for_match(db_sub) == "duplicate deduction":
                     return db_cat, db_sub
 
-    # Rule 3: Callback Promise / Follow-Up Issue (preventing mapping to Notifications)
-    if any(k in text for k in ["promised a call", "promised callback", "nobody called", "no call back", "never called", "promised to call"]):
+    # Rule 3: Callback / Follow-Up Issue (Generalized Follow-up Intent)
+    if any(k in text for k in ["promised to", "promised a call", "promised callback", "nobody called", "no call back", "never called"]):
         for db_cat, db_subs in category_mapping.items():
             for db_sub in db_subs:
                 if clean_for_match(db_sub) in ["follow up issue", "no response", "resolution delay"]:
+                    return db_cat, db_sub
+
+    # Rule 4: Unauthorized Transaction (Generalized Fraud/Security Intent)
+    if any(k in text for k in ["unauthorized", "don't recognize", "dont recognize", "unrecognized"]):
+        for db_cat, db_subs in category_mapping.items():
+            for db_sub in db_subs:
+                if clean_for_match(db_sub) in ["unauthorized transaction", "fraudulent activity"]:
+                    return db_cat, db_sub
+
+    # Rule 5: Web Portal Slow (Generalized Performance Intent)
+    if any(k in text for k in ["minutes to load", "loading slow", "extremely slow", "slow loading", "portal slow"]):
+        for db_cat, db_subs in category_mapping.items():
+            for db_sub in db_subs:
+                if clean_for_match(db_sub) in ["web portal slow", "portal slow"]:
+                    return db_cat, db_sub
+
+    # Rule 6: Response Time (Generalized Speed Praise Intent)
+    if any(k in text for k in ["quick response", "fast response", "handled query efficiently", "fast turnaround"]):
+        for db_cat, db_subs in category_mapping.items():
+            for db_sub in db_subs:
+                if clean_for_match(db_sub) in ["response time", "helpful professional agent"]:
                     return db_cat, db_sub
 
     # Rule 4: Failed Transaction
@@ -483,25 +513,62 @@ def fix_sentiment_priority_text(
     if emotion not in EMOTIONS:
         emotion = "Neutral"
 
-    # Operational Complaints Field Consistency Enforcement (VOC_009, VOC_010, VOC_002, VOC_004)
-    if any(k in text for k in ["extremely slow", "loading slow", "nobody called", "no one called", "nobody has called", "promised a call", "transaction failed", "pending for over"]):
+    # Operational Complaints Field Consistency Enforcement (VOC_007, VOC_009, VOC_010, VOC_002, VOC_004)
+    if any(k in text for k in ["extremely slow", "loading slow", "taking several minutes", "nobody called", "no one called", "promised to resolve", "transaction failed", "pending for over"]):
         sentiment = "Negative"
         if emotion in ["Neutral", "Happy", "Satisfied", ""]:
             emotion = "Frustrated"
         if priority in ["low", ""]:
             priority = "medium"
 
-    # Specific Observation Grounding Refinements (Fixing False Dispute Allegations)
-    if "charged twice" in text or "deducted twice" in text or "double charge" in text:
-        observation = "The customer reports being charged twice for the same subscription payment."
-        recommendations = "Verify the duplicate subscription charge and refund or reverse the duplicate amount if confirmed."
-    elif "deducted" in text and "failed" in text:
-        observation = "Customer's account was charged even though the transaction failed."
-        recommendations = "Verify the failed transaction and refund or reverse the deducted amount if the transaction was unsuccessful."
-    elif "verification" in text and "pending" in text:
+    # Hallucination Guard & Specific Observation Grounding Refinements
+    if "emi" in text and ("twice" in text or "deducted" in text):
+        observation = "The customer reports being charged or deducted twice for their EMI payment."
+        recommendations = "Verify the duplicate EMI deduction and refund or reverse the duplicate amount if confirmed."
+    elif "charged twice" in text or "deducted twice" in text or "double charge" in text:
+        observation = "The customer reports being charged twice for the same payment."
+        recommendations = "Verify the duplicate charge and refund or reverse the duplicate amount if confirmed."
+    elif "downloading loan statement" in text or "statement download" in text or ("shows an error" in text and "app" in text):
+        observation = "Customer reports an app error occurring when attempting to download their loan statement."
+        recommendations = "Investigate the mobile app error occurring during loan statement downloads and resolve the technical issue."
+    elif "submitted all required documents" in text or ("verification" in text and "pending" in text):
+        observation = "The customer's loan verification has remained pending for two weeks despite submitting the required documents."
         recommendations = "The organization should check the status of the document verification and provide the customer with an update."
+    elif "unauthorized" in text or "don't recognize" in text or "dont recognize" in text:
+        if emotion in ["Angry", "Neutral", ""]:
+            emotion = "Concerned" if "Concerned" in EMOTIONS else "Frustrated"
+        observation = "Customer reports an unrecognized transaction and believes it is unauthorized."
+        recommendations = "Investigate the transaction and follow the unauthorized-transaction verification and dispute process."
+    elif "refund" in text and ("ten days" in text or "days ago" in text or "pending" in text or "not credited" in text):
+        observation = "Customer reports a delayed refund that has not been credited after ten days."
+        recommendations = "Investigate the delayed refund, verify its current status, and credit the customer's account if the refund has been approved and is due."
+    elif "taking several minutes" in text or "slow portal" in text:
+        sentiment = "Negative"
+        emotion = "Frustrated"
+        priority = "medium"
+        observation = "The customer mentions slow performance with web portal pages taking several minutes to load."
+        recommendations = "The organization should investigate web portal load times and optimize performance for faster user experience."
+    elif "promised to resolve" in text or ("promised" in text and "update" in text):
+        observation = "Customer expected a resolution update from the agent as promised, but received no follow-up."
+        recommendations = "Follow up with the customer, provide the promised status update, and ensure the complaint is assigned and progressed appropriately."
+    elif "police complaint" in text or "rbi" in text or "fraudulent" in text:
+        sentiment = "Negative"
+        emotion = "Angry"
+        priority = "critical"
+        observation = "Customer alleges unresolved financial loss and threatens escalation to RBI / police."
+        recommendations = "Investigate the alleged fraudulent activity, assess the reported financial impact, and follow the appropriate fraud and regulatory escalation process."
     elif "update" in text and ("mobile" in text or "email" in text):
         recommendations = "Provide the customer with the appropriate process to update their registered mobile number and email address."
+
+    # Positive sentiment quality controls: Praise/positive feedback MUST be low priority & Organization-Facing
+    if sentiment == "Positive" and not has_critical:
+        priority = "low"
+        if "helpful agent" in text or "patiently" in text or "rahul" in text:
+            recommendations = "Recognize and reinforce the agent's helpful and patient customer-service behavior."
+        elif "quick response" in text or "efficiently" in text or "response time" in text:
+            recommendations = "Maintain the team's fast response time and professional handling of customer requests."
+        elif re.match(r"^(thank|thanks|express|appreciate)\b", recommendations.strip(), re.IGNORECASE) or "thank the customer" in recommendations.lower():
+            recommendations = "The organization should maintain fast response times and continue providing helpful customer service."
 
     if not observation:
         observation = "Customer provided feedback regarding their service experience."

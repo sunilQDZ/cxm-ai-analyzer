@@ -16,6 +16,15 @@ venv.bak/
 app.log
 cx_api.log
 
+# Readme & Internal Documentation (Do not push to GitHub)
+README.md
+readme.md
+PROJECT_DOCUMENTATION.md
+cpu_optimization_guide.md
+deployment_guide.md
+flow.txt
+steps.txt
+
 # IDE & OS
 .vscode/
 .idea/

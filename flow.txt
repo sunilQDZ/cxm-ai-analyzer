@@ -1,0 +1,493 @@
+1. User/API sends comment
+   Example:
+   "My refund is pending after cancellation."
+
+2. generate_insight(comment, comment_id) runs
+
+3. Code cleans comment
+   Function:
+   normalize_comment()
+
+4. Code extracts keywords
+   Function:
+   extract_keywords()
+
+5. Code connects to your MySQL DB
+   Function:
+   get_db_connection()
+
+6. Code fetches parent + sub-categories from DB
+   Function:
+   load_categories_from_db()
+
+   Tables used:
+   master_categories  → parent category
+   model_categories   → sub_category
+
+   Query:
+   SELECT
+       mc.name AS category,
+       mdc.name AS sub_category
+   FROM model_categories mdc
+   JOIN master_categories mc
+       ON mdc.parent_id = mc.id
+   WHERE mc.is_active = 1
+     AND mdc.is_active = 1
+   ORDER BY mc.id, mdc.id;
+
+7. DB result becomes Python mapping
+   Example:
+   {
+     "Payment related issue": ["Refund Issue"],
+     "Agent Behaviour": ["Communication Issues", "Poor Responsiveness"]
+   }
+
+8. This mapping is inserted into prompt
+   Function:
+   build_llm_prompt(comment, category_mapping)
+
+9. Prompt goes to Qwen/Ollama
+   Function:
+   call_ollama_llm()
+
+10. Model chooses category/sub_category only from DB mapping
+
+11. Model returns JSON
+   Example:
+   {
+     "category": "Payment related issue",
+     "sub_category": "Refund Issue",
+     "sentiment": "Negative",
+     "emotion": "Frustrated",
+     "priority": "high",
+     "observation": "...",
+     "recommendations": "..."
+   }
+
+12. API returns final output
+
+
+--------------------------------------------------------------------------------
+
+Your prompt uses DB here:
+
+category_mapping = load_categories_from_db()
+
+Then:
+
+llm_result = call_ollama_llm(
+    comment=normalized,
+    category_mapping=category_mapping
+)
+
+Then inside prompt:
+
+CATEGORY → SUB_CATEGORY MAPPING FROM DATABASE:
+{category_mapping_json}
+
+So final meaning:
+
+master_categories.name = category
+model_categories.name = sub_category
+model_categories.parent_id = master_categories.id
+
+
+--------------------------------------------------------------------------------
+
+
+
+
+This line:
+CATEGORY → SUB_CATEGORY MAPPING FROM DATABASE:{category_mapping_json}
+is the MOST IMPORTANT part of your entire system.
+Flow exactly:
+
+STEP 1 — DATA COMES FROM MYSQL
+Your function:
+load_categories_from_db()
+runs this query:
+SELECT    mc.name AS category,    mdc.name AS sub_categoryFROM model_categories mdcJOIN master_categories mc    ON mdc.parent_id = mc.id
+
+Suppose DB contains:
+master_categories
+idname1Agent Behaviour2Payment related issue
+
+model_categories
+idparent_idname11Communication Issues21Poor Responsiveness32Refund Issue
+
+
+STEP 2 — PYTHON CREATES DICTIONARY
+Your code converts DB rows into:
+{    "Agent Behaviour": [        "Communication Issues",        "Poor Responsiveness"    ],    "Payment related issue": [        "Refund Issue"    ]}
+This variable is:
+category_mapping
+
+
+STEP 3 — json.dumps()
+This line:
+category_mapping_json = json.dumps(category_mapping, indent=2)
+converts Python dictionary → text.
+Result becomes:
+{  "Agent Behaviour": [    "Communication Issues",    "Poor Responsiveness"  ],  "Payment related issue": [    "Refund Issue"  ]}
+
+
+STEP 4 — INSERTED INTO PROMPT
+Now prompt becomes:
+CATEGORY → SUB_CATEGORY MAPPING FROM DATABASE:{  "Agent Behaviour": [    "Communication Issues",    "Poor Responsiveness"  ],  "Payment related issue": [    "Refund Issue"  ]}
+
+
+STEP 5 — MODEL READS THIS
+Now Qwen sees:
+Available categories:- Agent Behaviour- Payment related issueAvailable subcategories:- Communication Issues- Poor Responsiveness- Refund Issue
+So model understands:
+Refund related VOC→ choose Payment related issue→ Refund Issue
+
+IMPORTANT UNDERSTANDING
+The model DOES NOT connect to MySQL directly.
+❌ Wrong understanding:
+Qwen → MySQL
+✅ Correct understanding:
+MySQL↓Python code↓Prompt text↓Qwen reads prompt
+
+
+
+------------------------------------------------------------------------------
+
+
+
+
+Suppose DB returns:
+
+category_mapping = {
+    "Loan Approval": [
+        "Approval Delay",
+        "Unclear Timeline"
+    ]
+}
+
+After:
+
+json.dumps(category_mapping, indent=2)
+
+result becomes:
+
+{
+  "Loan Approval": [
+    "Approval Delay",
+    "Unclear Timeline"
+  ]
+}
+
+Stored in:
+
+category_mapping_json
+
+Then inserted into prompt:
+
+prompt = f"""
+CATEGORY → SUB_CATEGORY MAPPING:
+
+{category_mapping_json}
+"""
+
+Final prompt sent to Qwen:
+
+CATEGORY → SUB_CATEGORY MAPPING:
+
+{
+  "Loan Approval": [
+    "Approval Delay",
+    "Unclear Timeline"
+  ]
+}
+
+
+
+-----------------------------------------------------------------------------------
+
+
+generate_insight()
+↓
+load_categories_from_db()
+↓
+call_ollama_llm()
+↓
+build_llm_prompt()
+↓
+Qwen model
+↓
+JSON output
+
+
+-------------------------------------------------------------
+
+
+
+VOC comment
+↓
+Python loads categories/sub-categories from DB
+↓
+Python puts DB mapping inside prompt
+↓
+Prompt is sent to Qwen/Ollama
+↓
+LLM reads VOC + DB mapping
+↓
+LLM chooses best matching category and sub_category
+↓
+API returns output
+
+
+
+----------------------------------------------------------
+
+
+From the beginning, these are the major changes we made and why:
+
+1. Dynamic DB-based category system
+Before
+
+Your categories/sub-categories were partially dependent on prompt behavior and manual logic.
+
+Now
+
+Everything comes dynamically from DB:
+
+load_categories_from_db()
+
+So when you add:
+
+new category
+new sub-category
+
+the model automatically uses them.
+
+Why
+
+You wanted production-ready dynamic behavior without changing code every time.
+
+2. Strict category ↔ sub-category validation
+Problem before
+
+LLM was giving:
+
+{
+  "category": "Foreclosure Issues",
+  "sub_category": "Generic"
+}
+
+or
+
+{
+  "category": "Hidden Charges",
+  "sub_category": "Hidden Charges"
+}
+
+or category/sub-category swapped.
+
+Fix
+
+We added:
+
+fix_category_subcategory_from_db()
+Why
+
+Now:
+
+category must exist in DB
+sub-category must belong to that category
+Generic only works with Generic
+3. Similarity matching (fuzzy matching)
+Problem before
+
+LLM returned:
+
+Unprofessionalism
+
+but DB had:
+
+Unprofessional Behaviour
+
+and it became Generic.
+
+Fix
+
+We added:
+
+similarity_score()
+
+using:
+
+SequenceMatcher
+token matching
+fuzzy comparison
+Why
+
+Now unseen wording still maps correctly.
+
+4. Generic handling fix
+Problem before
+
+You got:
+
+{
+  "category": "Support issue",
+  "sub_category": "Generic"
+}
+
+which you did not want.
+
+Fix
+
+We enforced:
+
+Generic category ↔ Generic sub-category together only
+Why
+
+Now:
+
+either both Generic
+or both valid mapped values
+5. Two-step fallback classification
+Problem before
+
+Single LLM call sometimes chose wrong category.
+
+Fix
+
+We added:
+
+classify_category_subcategory_two_step()
+
+Only as fallback.
+
+Why
+
+If initial classification fails:
+
+re-check category
+then re-check sub-category
+
+This improved accuracy.
+
+6. Fast DB text matching
+Problem before
+
+Extra LLM calls caused 70–80 sec latency.
+
+Fix
+
+We added:
+
+detect_category_from_db_text()
+detect_sub_category_from_db_text()
+Why
+
+Now many comments are matched directly from DB text without extra LLM calls.
+
+This reduced latency.
+
+7. Optimized LLM calls
+Before
+
+Too many expensive LLM calls.
+
+Fix
+
+We changed:
+
+num_predict
+retries
+conditional two-step
+Why
+
+Lower latency with same logic.
+
+8. Cache system
+Added
+CATEGORY_CACHE_TTL_SECONDS
+Why
+
+Without cache:
+
+DB hit every request
+slower API
+
+With cache:
+
+fast API
+categories auto-refresh after TTL
+no restart needed
+9. Better prompt engineering
+Before
+
+Prompt allowed model creativity.
+
+Now
+
+Prompt strictly says:
+
+only DB values
+no new category creation
+no mixing
+Generic last option
+Why
+
+Improved consistency.
+
+10. Positive feedback handling
+Problem before
+
+Positive comments mapped to issue categories.
+
+Example:
+
+good service
+
+became:
+
+Support issue → Poor Customer Support
+Fix
+
+We added:
+
+handle_positive_feedback()
+Why
+
+Positive-only comments now become:
+
+Generic → Generic
+Positive
+Satisfied
+11. Production-safe batch handling
+Added
+
+Thread-safe batch processing + fallback responses.
+
+Why
+
+One row failure should not crash whole batch.
+
+Final architecture now
+
+Your current system works like this:
+
+User Comment
+   ↓
+Normalize text
+   ↓
+Load DB categories
+   ↓
+Fast DB text match
+   ↓
+Main LLM classification
+   ↓
+DB validation + fuzzy fix
+   ↓
+Run extra two-step LLM only if needed
+   ↓
+Sentiment/emotion correction
+   ↓
+Positive-feedback correction
+   ↓
+Final JSON response

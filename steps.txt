@@ -1,0 +1,71 @@
+# 🤖 STEP 3: Install Ollama
+
+Download:
+https://ollama.com/download
+
+Start Ollama:
+
+ollama serve
+
+---
+
+# 📥 STEP 4: Download Model
+
+ollama pull qwen2.5:1.5b
+
+
+# ▶️ STEP 6: Run API
+
+python main.py
+
+OR
+
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+---
+
+# 🌐 STEP 7: Open API
+
+http://localhost:8000/docs
+
+---
+
+# 🔐 STEP 8: API Authentication
+
+Header required:
+
+x-api-key: my_secret_123
+
+---
+
+# 📤 STEP 9: Test API (Postman)
+
+POST /generate
+
+Body:
+
+{
+  "data": [
+    {
+      "id": "1",
+      "comments": "My refund is not processed even after 2 weeks"
+    }
+  ]
+}
+
+
+# ⚡ STEP : Keep Model ALWAYS RUNNING (Production)
+
+## 🔹 Create API Service
+
+## 🔹 Enable & Start
+
+sudo systemctl daemon-reload
+sudo systemctl enable cx-qwen-api
+sudo systemctl start cx-qwen-api
+
+
+## 🔹 Enable Ollama Auto Start
+
+sudo systemctl enable ollama
+sudo systemctl start ollama

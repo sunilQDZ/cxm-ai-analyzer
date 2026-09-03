@@ -1,0 +1,23 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.env
+
+# Logs & scratch output
+*.log
+app.log
+cx_api.log
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,4 +1,6 @@
+import os
 import time
+import json
 import logging
 from typing import Dict, List, Optional
 import pymysql
@@ -122,23 +124,48 @@ def check_db_status() -> bool:
                 pass
 
 
+def load_taxonomy_json_fallback() -> Dict[str, List[str]]:
+    """
+    Fallback category dictionary loaded from taxonomy.json if MySQL database is offline or timing out.
+    """
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    taxonomy_path = os.path.join(base_dir, "taxonomy.json")
+    if os.path.exists(taxonomy_path):
+        try:
+            with open(taxonomy_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                mapping = {}
+                for cat, subs in data.items():
+                    if isinstance(subs, dict):
+                        mapping[cat] = list(subs.keys())
+                    elif isinstance(subs, list):
+                        mapping[cat] = subs
+                if mapping:
+                    return mapping
+        except Exception as e:
+            logger.error(f"[FALLBACK] Failed to load taxonomy.json: {e}")
+    return {"Generic": ["Generic"]}
+
+
 def load_categories_from_db(force_refresh: bool = False) -> Dict[str, List[str]]:
     """
     Loads categories dynamically from MySQL database on every pipeline run.
     Guarantees 100% real-time category updates whenever categories/sub-categories are updated in DB.
-    Falls back to cached copy if DB is temporarily unreachable.
+    Falls back to taxonomy.json if DB is temporarily unreachable or timing out.
     """
     global _cached_categories, _cache_timestamp
 
     db_mapping = fetch_categories_from_db()
 
-    if db_mapping:
+    if db_mapping and len(db_mapping) > 1:
         _cached_categories = db_mapping
         _cache_timestamp = time.time()
         return _cached_categories
 
-    if _cached_categories is not None:
+    if _cached_categories is not None and len(_cached_categories) > 1:
         return _cached_categories
 
-    # Fallback only if database is completely empty or offline
-    return {"Generic": ["Generic"]}
+    # Fallback to taxonomy.json if database is offline or timing out
+    fallback = load_taxonomy_json_fallback()
+    _cached_categories = fallback
+    return _cached_categories

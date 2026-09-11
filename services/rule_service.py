@@ -321,7 +321,7 @@ def fix_category_subcategory_from_db(
             continue
         for db_sub in db_sub_categories:
             score = similarity_score(sub_category, db_sub)
-            if score > best_global_score and score >= 0.60:
+            if score > best_global_score and score >= 0.45:
                 best_global_score = score
                 best_global_cat = db_category
                 best_global_sub = db_sub
@@ -335,7 +335,7 @@ def fix_category_subcategory_from_db(
 
     for db_category in category_mapping.keys():
         score = similarity_score(category, db_category)
-        if score > best_cat_score and score >= 0.65:
+        if score > best_cat_score and score >= 0.50:
             best_cat_score = score
             fixed_category = db_category
 
@@ -348,16 +348,22 @@ def fix_category_subcategory_from_db(
         best_score = 0.0
         for db_sub in sub_list:
             score = similarity_score(sub_category, db_sub)
-            if score > best_score and score >= 0.55:
+            if score > best_score and score >= 0.40:
                 best_score = score
                 best_sub = db_sub
         if best_sub:
             return fixed_category, best_sub
 
-    if fixed_category == "Generic":
-        return "Generic", "Generic"
+    # 4. Fallback DB Text Token Scan (If LLM category is unrecognized or Generic, scan comment against DB taxonomy)
+    if fixed_category == "Generic" and comment:
+        detected_cat = detect_category_from_db_text(comment, category_mapping)
+        if detected_cat:
+            detected_sub = detect_sub_category_from_db_text(comment, detected_cat, category_mapping)
+            sub_categories_in_cat = category_mapping.get(detected_cat, [])
+            default_sub = sub_categories_in_cat[0] if sub_categories_in_cat else "Generic"
+            return detected_cat, detected_sub if detected_sub else default_sub
 
-    return fixed_category, sub_category if sub_category else "Other"
+    return "Generic", "Generic"
 
 
 def fix_sentiment_priority_text(

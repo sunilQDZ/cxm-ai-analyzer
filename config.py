@@ -31,7 +31,7 @@ MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_USER = os.getenv("MYSQL_USER", "surveycx_devuser")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "sR!t5Lv+}hUttv(d")
 MYSQL_DB = os.getenv("MYSQL_DB", "surveycx_dev")
-MYSQL_CONNECT_TIMEOUT = int(os.getenv("MYSQL_CONNECT_TIMEOUT", "5"))
+MYSQL_CONNECT_TIMEOUT = int(os.getenv("MYSQL_CONNECT_TIMEOUT", "10"))
 
 # ─────────────────────────────────────────────
 # CACHING & CONCURRENCY

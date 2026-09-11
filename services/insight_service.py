@@ -25,8 +25,8 @@ def generate_insight(comment: str, comment_id: str, category_mapping: Optional[D
     Main orchestration function for single VOC comment insight generation.
     """
     start = time.time()
-    print(f"▶ [VOC STARTED] ID: {comment_id}")
-    logger.info(f"▶ [VOC STARTED] ID: {comment_id}")
+    print(f"[VOC STARTED] ID: {comment_id}")
+    logger.info(f"[VOC STARTED] ID: {comment_id}")
 
     if category_mapping is None:
         category_mapping = load_categories_from_db()
@@ -36,8 +36,8 @@ def generate_insight(comment: str, comment_id: str, category_mapping: Optional[D
     # 1. Fast-path Gibberish bypass (0.00s latency)
     if is_gibrish == 1:
         elapsed = time.time() - start
-        print(f"✔ [VOC COMPLETED - GIBBERISH] ID: {comment_id} | Time: {elapsed:.2f}s")
-        logger.info(f"✔ [VOC COMPLETED - GIBBERISH] ID: {comment_id} | Time: {elapsed:.2f}s")
+        print(f"[VOC COMPLETED - GIBBERISH] ID: {comment_id} | Time: {elapsed:.2f}s")
+        logger.info(f"[VOC COMPLETED - GIBBERISH] ID: {comment_id} | Time: {elapsed:.2f}s")
         return {
             "id": comment_id,
             "comments": comment or "",
@@ -97,8 +97,8 @@ def generate_insight(comment: str, comment_id: str, category_mapping: Optional[D
             recommendations="Review customer feedback and process resolution."
         )
 
-        print(f"✔ [VOC COMPLETED - FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
-        logger.info(f"✔ [VOC COMPLETED - FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
+        print(f"[VOC COMPLETED - FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
+        logger.info(f"[VOC COMPLETED - FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
 
         return {
             "id": comment_id,
@@ -158,8 +158,8 @@ def generate_insight(comment: str, comment_id: str, category_mapping: Optional[D
 
     elapsed = time.time() - start
 
-    print(f"✔ [VOC COMPLETED] ID: {comment_id} | Time: {elapsed:.2f}s")
-    logger.info(f"✔ [VOC COMPLETED] ID: {comment_id} | Time: {elapsed:.2f}s")
+    print(f"[VOC COMPLETED] ID: {comment_id} | Time: {elapsed:.2f}s")
+    logger.info(f"[VOC COMPLETED] ID: {comment_id} | Time: {elapsed:.2f}s")
 
     return {
         "id": comment_id,
@@ -183,9 +183,9 @@ def process_comments_batch(comments_list: List[Tuple[str, str]]) -> List[Dict]:
     """
     total_items = len(comments_list)
     print(f"\n================================================================================")
-    print(f"🚀 BATCH REQUEST STARTED: Processing {total_items} VOC item(s)...")
+    print(f"[BATCH STARTED] Processing {total_items} VOC item(s)...")
     print(f"================================================================================\n")
-    logger.info(f"🚀 BATCH REQUEST STARTED: Processing {total_items} VOC item(s)...")
+    logger.info(f"[BATCH STARTED] Processing {total_items} VOC item(s)...")
     if BATCH_MAX_WORKERS <= 1 or len(comments_list) <= 1:
         results = []
         for comment, comment_id in comments_list:

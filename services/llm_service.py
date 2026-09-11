@@ -143,6 +143,11 @@ def build_llm_prompt(comment: str, category_mapping: Dict[str, list]) -> str:
 AVAILABLE CATEGORIES & SUB-CATEGORIES FROM DATABASE:
 {category_mapping_text}
 
+CRITICAL DATABASE CATEGORY SELECTION INSTRUCTION:
+1. You MUST select "category" and "sub_category" EXACTLY from the AVAILABLE CATEGORIES & SUB-CATEGORIES FROM DATABASE list above.
+2. DO NOT invent, generate, or paraphrase category or sub-category names that are not in the list.
+3. COPY AND PASTE the exact string name from the database list above.
+
 CRITICAL CONFUSION PAIRS DISAMBIGUATION (WITH POSITIVE & NEGATIVE EXAMPLES):
 1. App Error VS App Crash VS Transaction Failure:
    - App Error: An error message or glitch occurs while using the app (e.g. "App shows an error when downloading statement").

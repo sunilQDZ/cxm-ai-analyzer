@@ -4,7 +4,7 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 from config import BATCH_MAX_WORKERS
-from services.db_service import load_categories_from_db
+from services.db_service import load_categories_from_db, load_categories_from_db_with_status
 from services.gibberish_service import is_gibrish_comment
 from services.keyword_service import normalize_comment, extract_keywords
 from services.llm_service import call_ollama_llm
@@ -34,8 +34,28 @@ def generate_insight(
     print(f"[VOC STARTED] ID: {comment_id} | Client: {client_id} | Survey: {survey_id}")
     logger.info(f"[VOC STARTED] ID: {comment_id} | Client: {client_id} | Survey: {survey_id}")
 
+    db_ok = True
     if category_mapping is None:
-        category_mapping = load_categories_from_db(client_id=client_id, survey_id=survey_id)
+        category_mapping, db_ok = load_categories_from_db_with_status(client_id=client_id, survey_id=survey_id)
+
+    if not db_ok:
+        elapsed = time.time() - start
+        print(f"[VOC COMPLETED - DB UNREACHABLE] ID: {comment_id} | Time: {elapsed:.2f}s")
+        logger.error(f"[VOC COMPLETED - DB UNREACHABLE] ID: {comment_id} | Client: {client_id} | Survey: {survey_id}")
+        return {
+            "id": comment_id,
+            "comments": comment or "",
+            "is_gibberish": 0,
+            "category": "Generic",
+            "sub_category": "Generic",
+            "sentiment": "Neutral",
+            "emotion": "Neutral",
+            "priority": "low",
+            "keywords": "database offline",
+            "observation": "Database service is currently unreachable or timing out. Master categories could not be retrieved.",
+            "recommendations": "Please verify MySQL database connectivity and network access.",
+            "processing_time_ms": round(elapsed * 1000, 2),
+        }
 
     is_gibrish = is_gibrish_comment(comment, category_mapping=category_mapping)
 

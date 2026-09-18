@@ -37,13 +37,13 @@ def get_mysql_connection():
     )
 
 
-def fetch_categories_from_db(
+def fetch_categories_from_db_with_status(
     client_id: Optional[int] = None,
     survey_id: Optional[int] = None
-) -> Dict[str, List[str]]:
+) -> Tuple[Dict[str, List[str]], bool]:
     """
-    Fetches active categories and sub-categories from MySQL master_categories & model_categories tables,
-    filtered by client_id and survey_id if provided.
+    Fetches active categories and sub-categories from MySQL master_categories & model_categories tables.
+    Returns (category_mapping, db_connection_status).
     """
     conn = None
     try:
@@ -93,7 +93,7 @@ def fetch_categories_from_db(
         elif "Generic" not in mapping["Generic"]:
             mapping["Generic"].append("Generic")
 
-        return mapping
+        return mapping, True
 
     except pymysql.err.OperationalError as e:
         err_msg = str(e).lower()
@@ -101,11 +101,11 @@ def fetch_categories_from_db(
             logger.error(f"[TIMEOUT] MySQL database connection timed out after {MYSQL_CONNECT_TIMEOUT}s: {e}")
         else:
             logger.error(f"[DATABASE] MySQL operational error: {e}")
-        return {}
+        return {}, False
 
     except Exception as e:
         logger.error(f"[DATABASE] MySQL category fetch error: {e}")
-        return {}
+        return {}, False
 
     finally:
         if conn:
@@ -113,6 +113,14 @@ def fetch_categories_from_db(
                 conn.close()
             except Exception:
                 pass
+
+
+def fetch_categories_from_db(
+    client_id: Optional[int] = None,
+    survey_id: Optional[int] = None
+) -> Dict[str, List[str]]:
+    mapping, _ = fetch_categories_from_db_with_status(client_id=client_id, survey_id=survey_id)
+    return mapping
 
 
 def check_db_status() -> bool:
@@ -137,6 +145,39 @@ def check_db_status() -> bool:
 
 
 _cache_timestamps: Dict[Tuple[Optional[int], Optional[int]], float] = {}
+_cached_db_status: Dict[Tuple[Optional[int], Optional[int]], bool] = {}
+
+
+def load_categories_from_db_with_status(
+    client_id: Optional[int] = None,
+    survey_id: Optional[int] = None,
+    force_refresh: bool = False
+) -> Tuple[Dict[str, List[str]], bool]:
+    """
+    Loads categories dynamically from MySQL database for specified client_id and survey_id, returning status.
+    """
+    global _cached_categories, _cache_timestamps, _cached_db_status
+    cache_key = (client_id, survey_id)
+    now = time.time()
+
+    if not force_refresh and cache_key in _cached_categories:
+        last_time = _cache_timestamps.get(cache_key, 0.0)
+        if (now - last_time) < CATEGORY_CACHE_TTL_SECONDS:
+            return _cached_categories[cache_key], _cached_db_status.get(cache_key, True)
+
+    db_mapping, db_status = fetch_categories_from_db_with_status(client_id=client_id, survey_id=survey_id)
+
+    if db_status and db_mapping:
+        _cached_categories[cache_key] = db_mapping
+        _cache_timestamps[cache_key] = now
+        _cached_db_status[cache_key] = True
+        return db_mapping, True
+
+    fallback = {"Generic": ["Generic"]}
+    _cached_categories[cache_key] = fallback
+    _cache_timestamps[cache_key] = now
+    _cached_db_status[cache_key] = False
+    return fallback, False
 
 
 def load_categories_from_db(
@@ -144,39 +185,16 @@ def load_categories_from_db(
     survey_id: Optional[int] = None,
     force_refresh: bool = False
 ) -> Dict[str, List[str]]:
-    """
-    Loads categories dynamically from MySQL database for the specified client_id and survey_id.
-    Guarantees 100% real-time category updates strictly from DB master_categories & model_categories tables.
-    Auto-refreshes cache from MySQL every CATEGORY_CACHE_TTL_SECONDS (30 seconds).
-    """
-    global _cached_categories, _cache_timestamps
-    cache_key = (client_id, survey_id)
-    now = time.time()
-
-    if not force_refresh and cache_key in _cached_categories:
-        last_time = _cache_timestamps.get(cache_key, 0.0)
-        if (now - last_time) < CATEGORY_CACHE_TTL_SECONDS:
-            return _cached_categories[cache_key]
-
-    db_mapping = fetch_categories_from_db(client_id=client_id, survey_id=survey_id)
-
-    if db_mapping:
-        _cached_categories[cache_key] = db_mapping
-        _cache_timestamps[cache_key] = now
-        return db_mapping
-
-    # Fallback to Generic if MySQL query returns empty mapping
-    fallback = {"Generic": ["Generic"]}
-    _cached_categories[cache_key] = fallback
-    _cache_timestamps[cache_key] = now
-    return fallback
+    mapping, _ = load_categories_from_db_with_status(client_id=client_id, survey_id=survey_id, force_refresh=force_refresh)
+    return mapping
 
 
 def clear_category_cache() -> int:
     """
     Clears all cached category mappings from memory.
     """
-    global _cached_categories
+    global _cached_categories, _cached_db_status
     cleared_count = len(_cached_categories)
     _cached_categories.clear()
+    _cached_db_status.clear()
     return cleared_count

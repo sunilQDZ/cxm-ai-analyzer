@@ -136,29 +136,6 @@ def check_db_status() -> bool:
                 pass
 
 
-def load_taxonomy_json_fallback() -> Dict[str, List[str]]:
-    """
-    Fallback category dictionary loaded from taxonomy.json if MySQL database is offline or timing out.
-    """
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    taxonomy_path = os.path.join(base_dir, "taxonomy.json")
-    if os.path.exists(taxonomy_path):
-        try:
-            with open(taxonomy_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                mapping = {}
-                for cat, subs in data.items():
-                    if isinstance(subs, dict):
-                        mapping[cat] = list(subs.keys())
-                    elif isinstance(subs, list):
-                        mapping[cat] = subs
-                if mapping:
-                    return mapping
-        except Exception as e:
-            logger.error(f"[FALLBACK] Failed to load taxonomy.json: {e}")
-    return {"Generic": ["Generic"]}
-
-
 _cache_timestamps: Dict[Tuple[Optional[int], Optional[int]], float] = {}
 
 
@@ -188,7 +165,7 @@ def load_categories_from_db(
         _cache_timestamps[cache_key] = now
         return db_mapping
 
-    # Fallback only if MySQL connection returned empty mapping
+    # Fallback to Generic if MySQL query returns empty mapping
     fallback = {"Generic": ["Generic"]}
     _cached_categories[cache_key] = fallback
     _cache_timestamps[cache_key] = now

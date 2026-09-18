@@ -20,16 +20,22 @@ from services.rule_service import (
 logger = logging.getLogger("cx_api")
 
 
-def generate_insight(comment: str, comment_id: str, category_mapping: Optional[Dict[str, List[str]]] = None) -> Dict:
+def generate_insight(
+    comment: str,
+    comment_id: str,
+    client_id: Optional[int] = None,
+    survey_id: Optional[int] = None,
+    category_mapping: Optional[Dict[str, List[str]]] = None
+) -> Dict:
     """
     Main orchestration function for single VOC comment insight generation.
     """
     start = time.time()
-    print(f"[VOC STARTED] ID: {comment_id}")
-    logger.info(f"[VOC STARTED] ID: {comment_id}")
+    print(f"[VOC STARTED] ID: {comment_id} | Client: {client_id} | Survey: {survey_id}")
+    logger.info(f"[VOC STARTED] ID: {comment_id} | Client: {client_id} | Survey: {survey_id}")
 
     if category_mapping is None:
-        category_mapping = load_categories_from_db()
+        category_mapping = load_categories_from_db(client_id=client_id, survey_id=survey_id)
 
     is_gibrish = is_gibrish_comment(comment, category_mapping=category_mapping)
 
@@ -88,17 +94,8 @@ def generate_insight(comment: str, comment_id: str, category_mapping: Optional[D
             comment=normalized
         )
 
-        fb_sentiment, fb_emotion, fb_priority, fb_obs, fb_rec = fix_sentiment_priority_text(
-            comment=normalized,
-            sentiment="Neutral",
-            emotion="Neutral",
-            priority="low",
-            observation="Primary issue detected via taxonomy rules.",
-            recommendations="Review customer feedback and process resolution."
-        )
-
-        print(f"[VOC COMPLETED - FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
-        logger.info(f"[VOC COMPLETED - FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
+        print(f"[VOC COMPLETED - LLM OFFLINE FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
+        logger.info(f"[VOC COMPLETED - LLM OFFLINE FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
 
         return {
             "id": comment_id,
@@ -106,12 +103,12 @@ def generate_insight(comment: str, comment_id: str, category_mapping: Optional[D
             "is_gibberish": 0,
             "category": fb_cat,
             "sub_category": fb_sub,
-            "sentiment": fb_sentiment,
-            "emotion": fb_emotion,
-            "priority": fb_priority,
+            "sentiment": "Neutral",
+            "emotion": "Neutral",
+            "priority": "low",
             "keywords": extract_keywords(normalized, fb_cat, fb_sub),
-            "observation": fb_obs,
-            "recommendations": fb_rec,
+            "observation": "LLM model is currently offline or unreachable.",
+            "recommendations": "Please ensure the LLM service is running and try again.",
             "processing_time_ms": round(elapsed * 1000, 2),
         }
 
@@ -177,9 +174,9 @@ def generate_insight(comment: str, comment_id: str, category_mapping: Optional[D
     }
 
 
-def process_comments_batch(comments_list: List[Tuple[str, str]]) -> List[Dict]:
+def process_comments_batch(comments_list: List[Tuple[str, str, Optional[int], Optional[int]]]) -> List[Dict]:
     """
-    Batch processing coordinator for VOC comments array.
+    Batch processing coordinator for VOC comments array. Each element is (comment, comment_id, client_id, survey_id).
     """
     total_items = len(comments_list)
     print(f"\n================================================================================")
@@ -188,9 +185,12 @@ def process_comments_batch(comments_list: List[Tuple[str, str]]) -> List[Dict]:
     logger.info(f"[BATCH STARTED] Processing {total_items} VOC item(s)...")
     if BATCH_MAX_WORKERS <= 1 or len(comments_list) <= 1:
         results = []
-        for comment, comment_id in comments_list:
+        for item in comments_list:
+            comment, comment_id = item[0], item[1]
+            cid = item[2] if len(item) > 2 else None
+            sid = item[3] if len(item) > 3 else None
             try:
-                results.append(generate_insight(comment, comment_id))
+                results.append(generate_insight(comment, comment_id, client_id=cid, survey_id=sid))
             except Exception as e:
                 logger.error(f"Error processing {comment_id}: {str(e)[:80]}")
                 results.append({
@@ -212,21 +212,25 @@ def process_comments_batch(comments_list: List[Tuple[str, str]]) -> List[Dict]:
     indexed_results = {}
 
     with ThreadPoolExecutor(max_workers=BATCH_MAX_WORKERS) as executor:
-        future_map = {
-            executor.submit(generate_insight, comment, comment_id): index
-            for index, (comment, comment_id) in enumerate(comments_list)
-        }
+        future_map = {}
+        for index, item in enumerate(comments_list):
+            comment, comment_id = item[0], item[1]
+            cid = item[2] if len(item) > 2 else None
+            sid = item[3] if len(item) > 3 else None
+            fut = executor.submit(generate_insight, comment, comment_id, client_id=cid, survey_id=sid)
+            future_map[fut] = index
 
         for future in as_completed(future_map):
             index = future_map[future]
-            comment, comment_id = comments_list[index]
+            item = comments_list[index]
+            comment_id = item[1]
             try:
                 indexed_results[index] = future.result()
             except Exception as e:
                 logger.error(f"Error processing {comment_id}: {str(e)[:80]}")
                 indexed_results[index] = {
                     "id": comment_id,
-                    "comments": comment or "",
+                    "comments": item[0] or "",
                     "is_gibberish": 0,
                     "category": "Generic",
                     "sub_category": "Generic",

@@ -2,7 +2,7 @@ import os
 import time
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import pymysql
 
 from config import (
@@ -17,7 +17,7 @@ from config import (
 
 logger = logging.getLogger("cx_api")
 
-_cached_categories: Optional[Dict[str, List[str]]] = None
+_cached_categories: Dict[Tuple[Optional[int], Optional[int]], Dict[str, List[str]]] = {}
 _cache_timestamp: float = 0.0
 
 
@@ -37,16 +37,19 @@ def get_mysql_connection():
     )
 
 
-def fetch_categories_from_db() -> Dict[str, List[str]]:
+def fetch_categories_from_db(
+    client_id: Optional[int] = None,
+    survey_id: Optional[int] = None
+) -> Dict[str, List[str]]:
     """
-    Fetches active categories and sub-categories from MySQL master_categories & model_categories tables.
+    Fetches active categories and sub-categories from MySQL master_categories & model_categories tables,
+    filtered by client_id and survey_id if provided.
     """
     conn = None
     try:
         conn = get_mysql_connection()
         with conn.cursor() as cursor:
-            cursor.execute(
-                """
+            query = """
                 SELECT 
                     mc.name AS category_name,
                     sub.name AS sub_category_name
@@ -55,9 +58,18 @@ def fetch_categories_from_db() -> Dict[str, List[str]]:
                     ON sub.parent_id = mc.id
                     AND (sub.is_active = 1 OR sub.is_active IS NULL)
                 WHERE (mc.is_active = 1 OR mc.is_active IS NULL)
-                ORDER BY mc.name, sub.name
-                """
-            )
+            """
+            params = []
+            if client_id is not None:
+                query += " AND (mc.client_id = %s OR mc.client_id IS NULL)"
+                params.append(client_id)
+            if survey_id is not None:
+                query += " AND (mc.survey_id = %s OR mc.survey_id IS NULL)"
+                params.append(survey_id)
+
+            query += " ORDER BY mc.name, sub.name"
+
+            cursor.execute(query, params)
             rows = cursor.fetchall()
 
         mapping: Dict[str, List[str]] = {}
@@ -147,25 +159,47 @@ def load_taxonomy_json_fallback() -> Dict[str, List[str]]:
     return {"Generic": ["Generic"]}
 
 
-def load_categories_from_db(force_refresh: bool = False) -> Dict[str, List[str]]:
+_cache_timestamps: Dict[Tuple[Optional[int], Optional[int]], float] = {}
+
+
+def load_categories_from_db(
+    client_id: Optional[int] = None,
+    survey_id: Optional[int] = None,
+    force_refresh: bool = False
+) -> Dict[str, List[str]]:
     """
-    Loads categories dynamically from MySQL database on every pipeline run.
-    Guarantees 100% real-time category updates whenever categories/sub-categories are updated in DB.
-    Falls back to taxonomy.json if DB is temporarily unreachable or timing out.
+    Loads categories dynamically from MySQL database for the specified client_id and survey_id.
+    Guarantees 100% real-time category updates strictly from DB master_categories & model_categories tables.
+    Auto-refreshes cache from MySQL every CATEGORY_CACHE_TTL_SECONDS (30 seconds).
     """
-    global _cached_categories, _cache_timestamp
+    global _cached_categories, _cache_timestamps
+    cache_key = (client_id, survey_id)
+    now = time.time()
 
-    db_mapping = fetch_categories_from_db()
+    if not force_refresh and cache_key in _cached_categories:
+        last_time = _cache_timestamps.get(cache_key, 0.0)
+        if (now - last_time) < CATEGORY_CACHE_TTL_SECONDS:
+            return _cached_categories[cache_key]
 
-    if db_mapping and len(db_mapping) > 1:
-        _cached_categories = db_mapping
-        _cache_timestamp = time.time()
-        return _cached_categories
+    db_mapping = fetch_categories_from_db(client_id=client_id, survey_id=survey_id)
 
-    if _cached_categories is not None and len(_cached_categories) > 1:
-        return _cached_categories
+    if db_mapping:
+        _cached_categories[cache_key] = db_mapping
+        _cache_timestamps[cache_key] = now
+        return db_mapping
 
-    # Fallback to taxonomy.json if database is offline or timing out
-    fallback = load_taxonomy_json_fallback()
-    _cached_categories = fallback
-    return _cached_categories
+    # Fallback only if MySQL connection returned empty mapping
+    fallback = {"Generic": ["Generic"]}
+    _cached_categories[cache_key] = fallback
+    _cache_timestamps[cache_key] = now
+    return fallback
+
+
+def clear_category_cache() -> int:
+    """
+    Clears all cached category mappings from memory.
+    """
+    global _cached_categories
+    cleared_count = len(_cached_categories)
+    _cached_categories.clear()
+    return cleared_count

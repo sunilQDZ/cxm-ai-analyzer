@@ -51,71 +51,33 @@ def normalize_comment(comment: str) -> Optional[str]:
 
 def extract_keywords(comment: str, category: str = "", sub_category: str = "", llm_keywords: str = "") -> str:
     """
-    Extracts high-value, highly meaningful business n-gram phrases from VOC comments.
-    Filters out single token fragments (don, t, ve), numbers (ten, 10, two), time words (days, hours, yesterday),
-    and low-value generic words (shows, several, customer, page).
+    Extracts high-value, domain-agnostic analytical key phrases from VOC comments.
+    Works universally across any industry by dynamically building n-gram phrases 
+    and filtering out stop-words without any hardcoded domain terms.
     """
     if not comment or not comment.strip():
         return "issue"
 
-    text = comment.lower()
+    stop_words = {
+        "the", "a", "an", "is", "are", "was", "were", "am", "be", "been", "being",
+        "has", "have", "had", "do", "does", "did", "doing",
+        "and", "or", "but", "nor", "so", "yet", "for", "with", "as", "at", "by", "of", "to", "from", "in", "on", "off", "out", "up", "down", "over", "under",
+        "soo", "very", "too", "really", "extremely", "quite", "just", "also", "again", "further", "then", "once", "here", "there",
+        "when", "where", "why", "how", "all", "any", "both", "each", "few", "more", "most", "other", "some", "such",
+        "above", "below", "into", "through", "during", "before", "after", "between",
+        "i", "me", "my", "myself", "we", "our", "ours", "you", "your", "yours", "he", "him", "she", "her", "it", "its", "they", "them", "their",
+        "this", "that", "these", "those", "which", "what", "who", "whom",
+        "don", "t", "ve", "re", "ll", "m", "dont", "doesnt", "didnt", "isnt", "wasnt", "wont", "cant",
+        "ten", "two", "three", "four", "five", "six", "seven", "eight", "nine", "days", "weeks", "hours", "yesterday",
+        "shows", "several", "thing", "customer", "page", "browser", "please", "kindly", "thank", "thanks"
+    }
 
-    # Domain Business N-gram Extraction (Highest Priority)
-    business_phrases = []
-
-    # Financial / Payment N-grams
-    if "emi" in text and "deducted" in text:
-        business_phrases.append("duplicate EMI deduction")
-    elif "charged twice" in text or "deducted twice" in text or "double charge" in text:
-        business_phrases.append("duplicate payment deduction")
-    elif "unauthorized" in text or "don't recognize" in text or "dont recognize" in text:
-        business_phrases.append("unrecognized transaction")
-        business_phrases.append("unauthorized transaction")
-    elif "failed" in text and "transaction" in text:
-        business_phrases.append("failed transaction")
-    elif "refund" in text and ("pending" in text or "credited" in text or "delay" in text or "days" in text):
-        business_phrases.append("pending refund")
-        business_phrases.append("refund delay")
-
-    # Technical / App / Portal N-grams
-    if "statement" in text and ("download" in text or "downloading" in text or "error" in text):
-        business_phrases.append("loan statement download")
-        business_phrases.append("mobile app error")
-    elif "app" in text and ("error" in text or "glitch" in text):
-        business_phrases.append("mobile app error")
-    elif "app" in text and ("crash" in text or "freezes" in text):
-        business_phrases.append("mobile app crash")
-    elif "load" in text and ("slow" in text or "minutes" in text or "portal" in text):
-        business_phrases.append("web portal slow loading")
-        business_phrases.append("page load performance")
-
-    # Service / Support N-grams
-    if "verification" in text and ("pending" in text or "delay" in text):
-        business_phrases.append("verification delay")
-        business_phrases.append("document verification pending")
-    elif "promised" in text and ("call" in text or "update" in text or "resolve" in text):
-        business_phrases.append("unfulfilled callback promise")
-        business_phrases.append("unhandled follow-up issue")
-    elif "helpful" in text or "patiently" in text:
-        business_phrases.append("helpful agent service")
-    elif "quick response" in text or "handled query" in text:
-        business_phrases.append("fast response time")
-
-    if business_phrases:
-        # Deduplicate while preserving order
-        unique_phrases = []
-        for p in business_phrases:
-            if p not in unique_phrases:
-                unique_phrases.append(p)
-        return ", ".join(unique_phrases[:3])
-
-    # If LLM keywords provided, sanitize them
+    # 1. If LLM provided keywords, sanitize them strictly against stop-words
     if llm_keywords and isinstance(llm_keywords, str):
         raw_tokens = [k.strip().lower() for k in llm_keywords.replace("\n", ",").split(",") if k.strip()]
         valid_kw = []
-        junk = {"don", "t", "ve", "re", "ll", "m", "ten", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "days", "weeks", "hours", "yesterday", "shows", "several", "thing", "customer", "page", "browser", "app"}
         for k in raw_tokens:
-            words = [w for w in k.split() if w not in junk and len(w) > 2 and not w.isdigit()]
+            words = [w for w in k.split() if w not in stop_words and len(w) > 2 and not w.isdigit()]
             if words:
                 clean_phrase = " ".join(words)
                 if clean_phrase and clean_phrase not in valid_kw:
@@ -123,23 +85,35 @@ def extract_keywords(comment: str, category: str = "", sub_category: str = "", l
         if valid_kw:
             return ", ".join(valid_kw[:4])
 
-    # Fallback Stop Words list for general single-word extraction
-    stop_words = {
-        "i", "me", "my", "myself", "we", "our", "ours", "you", "your", "he", "him", "she", "her", "it", "its", "they", "them",
-        "don", "t", "ve", "re", "ll", "m", "dont", "doesnt", "didnt", "isnt", "wasnt", "wont", "cant",
-        "ten", "two", "three", "four", "five", "six", "seven", "eight", "nine", "days", "weeks", "hours", "yesterday",
-        "shows", "several", "thing", "customer", "page", "browser", "also", "just", "very", "please", "kindly", "thank", "thanks"
-    }
-
+    # 2. Universal Dynamic N-gram Phrase Extractor (directly from comment text)
+    text = comment.lower()
     clean_text = re.sub(r"[^\w\s]", " ", text)
     tokens = clean_text.split()
-    valid = []
-    for t in tokens:
-        if len(t) > 2 and t not in stop_words and not t.isdigit():
-            if t not in valid:
-                valid.append(t)
 
-    if valid:
-        return ", ".join(valid[:4])
+    valid_words = set(w for w in tokens if len(w) > 2 and w not in stop_words and not w.isdigit())
+
+    phrases = []
+    i = 0
+    while i < len(tokens) - 1:
+        w1, w2 = tokens[i], tokens[i + 1]
+        if w1 in valid_words and w2 in valid_words:
+            phrase = f"{w1} {w2}"
+            if phrase not in phrases:
+                phrases.append(phrase)
+            i += 2
+        else:
+            i += 1
+
+    if phrases:
+        return ", ".join(phrases[:3])
+
+    single_valid = [w for w in tokens if len(w) > 2 and w not in stop_words and not w.isdigit()]
+    if single_valid:
+        # Deduplicate while preserving order
+        unique_single = []
+        for s in single_valid:
+            if s not in unique_single:
+                unique_single.append(s)
+        return ", ".join(unique_single[:4])
 
     return category.lower() if category and category != "Generic" else "issue"

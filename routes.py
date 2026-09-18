@@ -19,8 +19,9 @@ router = APIRouter()
 # ─────────────────────────────────────────────
 class CommentItem(BaseModel):
     id: str
+    client_id: int
+    survey_id: int
     comments: str
-
 
 class InferenceRequest(BaseModel):
     data: List[CommentItem]
@@ -88,7 +89,7 @@ def generate(
     """
     Main VOC analysis endpoint: categorizes feedback, detects gibberish, extracts keywords,
     and analyzes sentiment, emotion, priority, observations, and recommendations.
-    Supports concurrent multi-item processing.
+    Supports concurrent multi-item processing and client_id / survey_id filtered category loading.
     """
     api_start = time.time()
     require_api_key(x_api_key)
@@ -104,10 +105,18 @@ def generate(
 
     if len(request.data) == 1:
         single = request.data[0]
-        insight = generate_insight(single.comments, single.id)
+        insight = generate_insight(single.comments, single.id, client_id=single.client_id, survey_id=single.survey_id)
         results = [InsightPredictionItem(**insight)]
     else:
-        batch_tuples = [(item.comments, item.id) for item in request.data]
+        batch_tuples = [
+            (
+                item.comments,
+                item.id,
+                item.client_id,
+                item.survey_id,
+            )
+            for item in request.data
+        ]
         raw_insights = process_batch_insights(batch_tuples)
         results = [InsightPredictionItem(**res) for res in raw_insights]
 
@@ -141,7 +150,6 @@ def clear_logs(
 
 
 @router.post("/clear-cache", tags=["Cache"])
-@router.delete("/clear-cache", tags=["Cache"])
 def clear_cache_endpoint(x_api_key: Optional[str] = Header(default=None)):
     """
     Manually clears all __pycache__ directories and flushes database category memory caches.
@@ -149,7 +157,7 @@ def clear_cache_endpoint(x_api_key: Optional[str] = Header(default=None)):
     require_api_key(x_api_key)
     import shutil
     import os
-    from services.db_service import load_categories_from_db
+    from services.db_service import load_categories_from_db, clear_category_cache
 
     deleted_pycache = 0
     project_dir = os.path.dirname(os.path.abspath(__file__))
@@ -169,11 +177,13 @@ def clear_cache_endpoint(x_api_key: Optional[str] = Header(default=None)):
                     pass
 
     # Flush DB category memory cache
+    cleared_entries = clear_category_cache()
     refreshed_cats = load_categories_from_db(force_refresh=True)
 
     return {
         "status": "ok",
         "message": "Cache successfully cleared",
         "deleted_pycache_directories": deleted_pycache,
+        "cleared_category_cache_entries": cleared_entries,
         "active_master_categories_cached": len(refreshed_cats)
     }

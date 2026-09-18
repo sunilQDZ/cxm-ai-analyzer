@@ -98,15 +98,12 @@ def check_ollama_status(force_check: bool = False) -> bool:
     """
     Verifies if Ollama server is running and the target model is loaded.
     """
-    global OLLAMA_AVAILABLE
+    global OLLAMA_AVAILABLE, ollama_session
 
-    if not force_check:
-        return OLLAMA_AVAILABLE
+    if ollama_session is None:
+        ollama_session = build_http_session()
 
     try:
-        if ollama_session is None:
-            return False
-
         response = ollama_session.get(f"{OLLAMA_HOST}/api/tags", timeout=3)
         if response.status_code == 200:
             payload = response.json()
@@ -125,8 +122,8 @@ def check_ollama_status(force_check: bool = False) -> bool:
 
 def build_llm_prompt(comment: str, category_mapping: Dict[str, list]) -> str:
     """
-    Builds structured VOC analysis prompt incorporating taxonomy definitions, confusion pairs,
-    13-step execution process, and 17 strict grounding rules.
+    Builds structured VOC analysis prompt incorporating database categories, 
+    strict grounding rules, and stop-word free keyword extraction instructions.
     """
     category_lines = []
     for cat, subs in category_mapping.items():
@@ -145,75 +142,34 @@ AVAILABLE CATEGORIES & SUB-CATEGORIES FROM DATABASE:
 
 CRITICAL DATABASE CATEGORY SELECTION INSTRUCTION:
 1. You MUST select "category" and "sub_category" EXACTLY from the AVAILABLE CATEGORIES & SUB-CATEGORIES FROM DATABASE list above.
-2. DO NOT invent, generate, or paraphrase category or sub-category names that are not in the list.
-3. COPY AND PASTE the exact string name from the database list above.
-
-CRITICAL CONFUSION PAIRS DISAMBIGUATION (WITH POSITIVE & NEGATIVE EXAMPLES):
-1. App Error VS App Crash VS Transaction Failure:
-   - App Error: An error message or glitch occurs while using the app (e.g. "App shows an error when downloading statement").
-     * Positive Example: "Mobile app shows an error when downloading loan statement" -> Mobile App & Technical -> App Error.
-     * DO NOT classify statement download errors as Payment & Transactions -> Failed Transaction!
-   - App Crash: App closes, freezes, or exits unexpectedly.
-   - Transaction Failure: Payment or money transfer fails to complete after clicking pay.
-
-2. Verification Delay VS Document Rejection / Upload Issues:
-   - Verification Delay: Documents were submitted, but verification is pending or taking too long.
-     * Positive Example: "Submitted all required documents, verification is still pending" -> KYC & Verification -> Verification Delay.
-     * DO NOT classify submitted pending documents as Document Rejection!
-   - Document Rejection: Document was rejected, invalid, or unreadable.
-
-3. Web Portal Slow VS Web Portal Error:
-   - Web Portal Slow: Slow page loading, taking several minutes, lagging screens.
-     * Positive Example: "Taking several minutes to load every page" -> Digital / Web Portal -> Web Portal Slow (Sentiment: Negative, Emotion: Frustrated, Priority: medium).
-     * DO NOT classify slow loading as Web Portal Error!
-   - Web Portal Error: 504 gateway timeout, HTTP 500 error code, broken link.
-
-4. Unauthorized Transaction VS Charge Dispute:
-   - Unauthorized Transaction: Customer does not recognize transaction or believes card was compromised.
-     * Positive Example: "I don't recognize this transaction... I believe it is unauthorized" -> Payment & Transactions -> Unauthorized Transaction.
-   - Charge Dispute: Customer recognizes transaction but disagrees with fee amount or double charge.
-
-5. Duplicate Deduction:
-   - Positive Example: "My EMI was deducted twice" -> Payment & Transactions -> Duplicate Deduction.
-   - DO NOT invent "subscription" if customer mentions EMI or loan!
-
-6. Response Time VS Notification Delay:
-   - Response Time: Praise or complaint about query turnaround speed.
-     * Positive Example: "Quick response... handled my query professionally" -> Customer Service -> Response Time.
-     * DO NOT classify quick query response as Notification Delay!
-
-7. Follow-up Issue:
-   - Positive Example: "Agent promised to resolve my complaint yesterday, but no update" -> Customer Service -> Follow-up Issue.
-     * DO NOT claim "complaint was resolved" if agent only promised to resolve it!
+2. Select the category and sub_category that best matches the PRIMARY topic, issue, or intent expressed in the customer comment.
+3. DO NOT invent, generate, or paraphrase category or sub-category names that are not in the list above.
+4. COPY AND PASTE the exact string name from the database list above.
 
 PRIMARY ISSUE & HALLUCINATION GUARD RULES:
-1. FIRST identify the PRIMARY customer issue. Select Category & Sub-Category based on the PRIMARY issue.
+1. FIRST identify the PRIMARY customer issue or praise topic.
 2. Use ONLY facts explicitly present in the customer comment.
-3. NEVER introduce concepts like "subscription", "payment gateway", "refund", "document rejection", "transaction", "resolution" UNLESS explicitly present in the customer comment!
-4. If customer mentions "EMI deducted twice", do NOT invent "subscription".
-5. If customer mentions "downloading statement error", do NOT invent "payment gateway".
-6. Recommendation MUST be organization-facing ("The organization should..."), NEVER customer-facing ("Thank you for your feedback...").
+3. Recommendation MUST be organization-facing ("The organization should..."), NEVER customer-facing ("Thank you for your feedback...").
 
-KEYWORD RULES:
-Generate 3-6 meaningful, issue-specific analytical keywords or 2-3 word business phrases.
-Prefer business concepts and issue phrases over individual common words.
-DO NOT include:
-- articles, pronouns, numbers (e.g. "ten", "two", "10")
-- time words such as "days", "yesterday", "weeks"
-- token fragments such as "don" from "don't"
-- generic words such as "shows", "customer", "thing", "good", "several"
+KEYWORD EXTRACTION RULES:
+Generate 2-4 meaningful, issue-specific analytical key phrases or 2-3 word business concepts.
+DO NOT INCLUDE:
+- articles (e.g. "the", "a", "an")
+- pronouns (e.g. "I", "it", "my", "this")
+- auxiliary verbs or intensifiers (e.g. "is", "are", "was", "soo", "very", "too")
+- numbers or generic words (e.g. "thing", "customer", "shows")
 
 GOOD KEYWORDS EXAMPLES:
+- "expensive medical facility"
+- "high hospital cost"
 - "duplicate EMI deduction"
-- "mobile app error"
-- "loan statement download"
-- "pending refund"
-- "slow portal loading"
+- "mobile app crash"
+- "unhelpful staff service"
 
 BAD KEYWORDS EXAMPLES:
-- "mobile, app, shows, error"
-- "refund, ten, days"
-- "don, recognize, transaction"
+- "the, hospital, medical, facility"
+- "soo, expensive, is"
+- "it, is, bad"
 
 FIELD ENUM RULES:
 - sentiment must be exactly one of: {SENTIMENTS}

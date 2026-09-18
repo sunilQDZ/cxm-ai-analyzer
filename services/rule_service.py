@@ -37,7 +37,8 @@ def similarity_score(a: str, b: str) -> float:
 
 def comment_match_score(comment: str, target: str) -> int:
     """
-    Computes token overlap score between comment and target category/sub-category.
+    Computes dynamic token overlap score between comment and target DB category/sub-category.
+    Works 100% domain-agnostically for any industry using exact word and 4-letter stem matching.
     """
     comment_clean = clean_for_match(comment)
     target_clean = clean_for_match(target)
@@ -46,18 +47,26 @@ def comment_match_score(comment: str, target: str) -> int:
         return 0
 
     score = 0
-    target_words = target_clean.split()
-    matched_words = 0
+    target_words = [w for w in target_clean.split() if len(w) > 2]
+    comment_words = [w for w in comment_clean.split() if len(w) > 2]
+    if not target_words or not comment_words:
+        return 0
 
-    for word in target_words:
-        if len(word) <= 2:
-            continue
-        if re.search(r"\b" + re.escape(word) + r"\b", comment_clean):
-            score += 15
+    matched_words = 0
+    for tw in target_words:
+        if re.search(r"\b" + re.escape(tw) + r"\b", comment_clean):
+            score += 25
             matched_words += 1
+            continue
+
+        if len(tw) >= 4:
+            stem = tw[:4]
+            if any(cw[:4] == stem for cw in comment_words if len(cw) >= 4):
+                score += 20
+                matched_words += 1
 
     if target_clean in comment_clean:
-        score += 35
+        score += 40
 
     if matched_words >= 2:
         score += 20
@@ -67,7 +76,7 @@ def comment_match_score(comment: str, target: str) -> int:
 
 def detect_category_from_db_text(comment: str, category_mapping: Dict[str, List[str]]) -> Optional[str]:
     """
-    Detects best matching category from direct comment text tokens.
+    Detects best matching category from direct comment text tokens dynamically against DB categories.
     """
     if not comment or not category_mapping:
         return None
@@ -102,7 +111,7 @@ def detect_sub_category_from_db_text(
     category_mapping: Dict[str, List[str]]
 ) -> Optional[str]:
     """
-    Detects best sub-category under given category.
+    Detects best sub-category under given category dynamically against DB taxonomy.
     """
     sub_categories = category_mapping.get(category, [])
     if not sub_categories:
@@ -127,133 +136,9 @@ def apply_taxonomy_guardrails(
     category_mapping: Dict[str, List[str]]
 ) -> Tuple[str, str]:
     """
-    Applies deterministic taxonomy guardrails on model outputs to resolve common 1.5B LLM confusion pairs:
-    1. Verification Delay vs Document Upload Issues
-    2. Duplicate Deduction vs Charge Dispute
-    3. Callback Promises / Follow-up Issue vs Notifications
-    4. Failed Transaction vs Payment Gateway Error
+    Domain-agnostic guardrail placeholder.
+    Delegates category alignment 100% dynamically to DB taxonomy matching.
     """
-    if not comment:
-        return category, sub_category
-
-    text = comment.lower()
-
-    # Rule 0: App Crash vs App Error (Generalized Technical Intent)
-    if any(k in text for k in ["crash", "crashes", "crashing", "freezes", "freezing", "closes unexpectedly", "app closed"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) == "app crash":
-                    return db_cat, db_sub
-    elif any(k in text for k in ["error downloading", "shows an error", "app error", "application error", "download error", "page error"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["app error", "technical issue", "application error", "mobile app technical"]:
-                    return db_cat, db_sub
-
-    # Rule 0b: Agent Misconduct / Rude Behaviour vs Helpful Agent (Generalized Support Intent)
-    if any(k in text for k in ["helpful agent", "patiently", "polite and helpful", "great support", "helpful executive"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["helpful professional agent", "helpful agent", "customer service"]:
-                    return db_cat, db_sub
-    elif any(k in text for k in ["rude", "yelled", "abusive", "hung up", "disrespectful"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["rude behaviour", "aggressive behaviour", "unhelpful agent"]:
-                    return db_cat, db_sub
-
-    # Rule 1: Verification Delay vs Document Upload (Generalized Verification Intent)
-    if any(k in text for k in ["submitted", "uploaded", "documents"]) and any(k in text for k in ["pending", "weeks", "delayed", "waiting"]):
-        if not any(k in text for k in ["cannot upload", "upload fail", "file rejected", "cant upload", "unable to upload"]):
-            for db_cat, db_subs in category_mapping.items():
-                for db_sub in db_subs:
-                    if clean_for_match(db_sub) == "verification delay":
-                        return db_cat, db_sub
-
-    # Rule 2: Duplicate Deduction (Generalized Payment Intent)
-    if any(k in text for k in ["charged twice", "deducted twice", "charged 2 times", "deducted 2 times", "double charge"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) == "duplicate deduction":
-                    return db_cat, db_sub
-
-    # Rule 3: Callback / Follow-Up Issue (Generalized Follow-up Intent)
-    if any(k in text for k in ["promised to", "promised a call", "promised callback", "nobody called", "no call back", "never called"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["follow up issue", "no response", "resolution delay"]:
-                    return db_cat, db_sub
-
-    # Rule 4: Unauthorized Transaction (Generalized Fraud/Security Intent)
-    if any(k in text for k in ["unauthorized", "don't recognize", "dont recognize", "unrecognized"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["unauthorized transaction", "fraudulent activity"]:
-                    return db_cat, db_sub
-
-    # Rule 5: Web Portal Slow (Generalized Performance Intent)
-    if any(k in text for k in ["minutes to load", "loading slow", "extremely slow", "slow loading", "portal slow"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["web portal slow", "portal slow"]:
-                    return db_cat, db_sub
-
-    # Rule 6: Response Time (Generalized Speed Praise Intent)
-    if any(k in text for k in ["quick response", "fast response", "handled query efficiently", "fast turnaround"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["response time", "helpful professional agent"]:
-                    return db_cat, db_sub
-
-    # Rule 4: Failed Transaction
-    if "deducted" in text and ("failed" in text or "transaction failed" in text):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["failed transaction", "failed transfer", "payment not received"]:
-                    return db_cat, db_sub
-
-    # Rule 5: Unauthorized Transaction & Fraud Allegation
-    if any(k in text for k in ["unauthorized transaction", "fraudulent transaction", "card stolen", "hacked", "police complaint"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["unauthorized transaction", "fraudulent activity", "police / legal threat"]:
-                    return db_cat, db_sub
-
-    # Rule 6: Biometric / Fingerprint Authentication
-    if any(k in text for k in ["biometric", "fingerprint", "face id", "touch id"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["biometric authentication", "login issue"]:
-                    return db_cat, db_sub
-
-    # Rule 7: Telecom & Data Speed Issues
-    if any(k in text for k in ["data speed", "internet speed", "slow data", "network speed"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["data speed issues", "network outage"]:
-                    return db_cat, db_sub
-
-    # Rule 8: E-Commerce Damaged Goods / Missing Items
-    if any(k in text for k in ["damaged package", "damaged item", "damaged goods", "missing items", "missing item"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["damaged goods", "package damage", "missing item"]:
-                    return db_cat, db_sub
-
-    # Rule 9: Order / Shipment Tracking
-    if any(k in text for k in ["tracking status", "track order", "shipment tracking", "order tracking"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["order tracking", "shipment tracking", "delivery tracking"]:
-                    return db_cat, db_sub
-
-    # Rule 10: Refund Request / Refund Issue
-    if any(k in text for k in ["refund", "send my money back", "money back", "refund pending", "refund abhi tak"]):
-        for db_cat, db_subs in category_mapping.items():
-            for db_sub in db_subs:
-                if clean_for_match(db_sub) in ["refund issue", "refund request", "pending refund"]:
-                    return db_cat, db_sub
-
     return category, sub_category
 
 
@@ -285,6 +170,8 @@ def fix_category_subcategory_from_db(
 
     # 1. Exact Category Match Check
     for db_category, db_sub_categories in category_mapping.items():
+        if db_category == "Generic":
+            continue
         if clean_for_match(db_category) == category_clean:
             # Try exact sub-category match under this parent category
             for db_sub in db_sub_categories:
@@ -356,6 +243,22 @@ def fix_category_subcategory_from_db(
 
     # 4. Fallback DB Text Token Scan (If LLM category is unrecognized or Generic, scan comment against DB taxonomy)
     if fixed_category == "Generic" and comment:
+        # First check direct sub-category keyword match across all categories in DB taxonomy
+        best_sub_cat = None
+        best_sub_name = None
+        best_sub_score = 0
+        for db_cat, db_subs in category_mapping.items():
+            if db_cat == "Generic":
+                continue
+            for sub in db_subs:
+                score = comment_match_score(comment, sub)
+                if score > best_sub_score and score >= 10:
+                    best_sub_score = score
+                    best_sub_cat = db_cat
+                    best_sub_name = sub
+        if best_sub_cat and best_sub_name:
+            return best_sub_cat, best_sub_name
+
         detected_cat = detect_category_from_db_text(comment, category_mapping)
         if detected_cat:
             detected_sub = detect_sub_category_from_db_text(comment, detected_cat, category_mapping)
@@ -527,60 +430,12 @@ def fix_sentiment_priority_text(
         if priority in ["low", ""]:
             priority = "medium"
 
-    # Hallucination Guard & Specific Observation Grounding Refinements
-    if "emi" in text and ("twice" in text or "deducted" in text):
-        observation = "The customer reports being charged or deducted twice for their EMI payment."
-        recommendations = "Verify the duplicate EMI deduction and refund or reverse the duplicate amount if confirmed."
-    elif "charged twice" in text or "deducted twice" in text or "double charge" in text:
-        observation = "The customer reports being charged twice for the same payment."
-        recommendations = "Verify the duplicate charge and refund or reverse the duplicate amount if confirmed."
-    elif "downloading loan statement" in text or "statement download" in text or ("shows an error" in text and "app" in text):
-        observation = "Customer reports an app error occurring when attempting to download their loan statement."
-        recommendations = "Investigate the mobile app error occurring during loan statement downloads and resolve the technical issue."
-    elif "submitted all required documents" in text or ("verification" in text and "pending" in text):
-        observation = "The customer's loan verification has remained pending for two weeks despite submitting the required documents."
-        recommendations = "The organization should check the status of the document verification and provide the customer with an update."
-    elif "unauthorized" in text or "don't recognize" in text or "dont recognize" in text:
-        if emotion in ["Angry", "Neutral", ""]:
-            emotion = "Concerned" if "Concerned" in EMOTIONS else "Frustrated"
-        observation = "Customer reports an unrecognized transaction and believes it is unauthorized."
-        recommendations = "Investigate the transaction and follow the unauthorized-transaction verification and dispute process."
-    elif "refund" in text and ("ten days" in text or "days ago" in text or "pending" in text or "not credited" in text):
-        observation = "Customer reports a delayed refund that has not been credited after ten days."
-        recommendations = "Investigate the delayed refund, verify its current status, and credit the customer's account if the refund has been approved and is due."
-    elif "taking several minutes" in text or "slow portal" in text:
-        sentiment = "Negative"
-        emotion = "Frustrated"
-        priority = "medium"
-        observation = "The customer mentions slow performance with web portal pages taking several minutes to load."
-        recommendations = "The organization should investigate web portal load times and optimize performance for faster user experience."
-    elif "promised to resolve" in text or ("promised" in text and "update" in text):
-        observation = "Customer expected a resolution update from the agent as promised, but received no follow-up."
-        recommendations = "Follow up with the customer, provide the promised status update, and ensure the complaint is assigned and progressed appropriately."
-    elif "police complaint" in text or "rbi" in text or "fraudulent" in text:
-        sentiment = "Negative"
-        emotion = "Angry"
-        priority = "critical"
-        observation = "Customer alleges unresolved financial loss and threatens escalation to RBI / police."
-        recommendations = "Investigate the alleged fraudulent activity, assess the reported financial impact, and follow the appropriate fraud and regulatory escalation process."
-    elif "update" in text and ("mobile" in text or "email" in text):
-        recommendations = "Provide the customer with the appropriate process to update their registered mobile number and email address."
-
-    # Positive sentiment quality controls: Praise/positive feedback MUST be low priority & Organization-Facing
-    if sentiment == "Positive" and not has_critical:
-        priority = "low"
-        if "helpful agent" in text or "patiently" in text or "rahul" in text:
-            recommendations = "Recognize and reinforce the agent's helpful and patient customer-service behavior."
-        elif "quick response" in text or "efficiently" in text or "response time" in text:
-            recommendations = "Maintain the team's fast response time and professional handling of customer requests."
-        elif re.match(r"^(thank|thanks|express|appreciate)\b", recommendations.strip(), re.IGNORECASE) or "thank the customer" in recommendations.lower():
-            recommendations = "The organization should maintain fast response times and continue providing helpful customer service."
-
+    # Simple fallback only if observation or recommendation text is empty
     if not observation:
-        observation = "Customer provided feedback regarding their service experience."
+        observation = f"Customer provided feedback: '{comment.strip()}'"
 
     if not recommendations:
-        recommendations = "Review the customer's feedback and follow up with an appropriate update."
+        recommendations = "Review the reported customer feedback and process appropriate action."
 
     return sentiment, emotion, priority, observation, recommendations
 

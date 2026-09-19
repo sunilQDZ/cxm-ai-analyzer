@@ -53,8 +53,11 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Include API Router
+# Include API Routers
 app.include_router(router)
+
+from api.dashboard import router as dashboard_router
+app.include_router(dashboard_router)
 
 
 from config import (

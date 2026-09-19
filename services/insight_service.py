@@ -15,6 +15,7 @@ from services.rule_service import (
     fix_category_subcategory_from_db,
     fix_sentiment_priority_text,
     handle_positive_feedback,
+    handle_out_of_domain_generic,
 )
 
 logger = logging.getLogger("cx_api")
@@ -166,6 +167,15 @@ def generate_insight(
         sentiment=sentiment,
         emotion=emotion,
         priority=priority,
+        observation=observation,
+        recommendations=recommendations
+    )
+
+    # 7c. Enforce out-of-domain message when category is Generic
+    observation, recommendations = handle_out_of_domain_generic(
+        comment=normalized,
+        category=category,
+        sub_category=sub_category,
         observation=observation,
         recommendations=recommendations
     )

@@ -38,7 +38,8 @@ def similarity_score(a: str, b: str) -> float:
 def comment_match_score(comment: str, target: str) -> int:
     """
     Computes dynamic token overlap score between comment and target DB category/sub-category.
-    Works 100% domain-agnostically for any industry using exact word and 4-letter stem matching.
+    Works 100% domain-agnostically for ANY industry using exact word and 4-letter stem matching.
+    Does NOT use any hardcoded domain keywords or industry assumptions.
     """
     comment_clean = clean_for_match(comment)
     target_clean = clean_for_match(target)
@@ -77,6 +78,7 @@ def comment_match_score(comment: str, target: str) -> int:
 def detect_category_from_db_text(comment: str, category_mapping: Dict[str, List[str]]) -> Optional[str]:
     """
     Detects best matching category from direct comment text tokens dynamically against DB categories.
+    Requires at least one exact word match or multiple strong token matches (score >= 25).
     """
     if not comment or not category_mapping:
         return None
@@ -98,7 +100,7 @@ def detect_category_from_db_text(comment: str, category_mapping: Dict[str, List[
 
         total_score = (category_score * 2) + sub_best
 
-        if total_score > best_score and total_score >= 15:
+        if total_score > best_score and total_score >= 25:
             best_score = total_score
             best_category = db_category
 
@@ -122,11 +124,39 @@ def detect_sub_category_from_db_text(
 
     for sub in sub_categories:
         score = comment_match_score(comment, sub)
-        if score > best_score and score >= 15:
+        if score > best_score and score >= 25:
             best_score = score
             best_sub = sub
 
     return best_sub
+
+
+def is_category_relevant_to_comment(
+    comment: str,
+    category: str,
+    sub_category: str,
+    category_mapping: Dict[str, List[str]]
+) -> bool:
+    """
+    Verifies if a candidate category/sub-category has any genuine semantic token, stem,
+    or keyword relevance with the customer comment text.
+    If category is 'Generic' or comment is empty, returns True.
+    """
+    if not category or category == "Generic":
+        return True
+
+    if not comment:
+        return True
+
+    cat_score = comment_match_score(comment, category)
+    sub_score = comment_match_score(comment, sub_category) if sub_category else 0
+
+    sibling_subs = category_mapping.get(category, [])
+    max_sibling_score = max((comment_match_score(comment, s) for s in sibling_subs), default=0)
+
+    total_relevance = max(cat_score, sub_score, max_sibling_score)
+
+    return total_relevance >= 25
 
 
 def apply_taxonomy_guardrails(
@@ -151,7 +181,7 @@ def fix_category_subcategory_from_db(
     """
     Validates and aligns category & sub_category to database keys.
     Purely dynamic: searches DB taxonomy, cross-references sub-categories to correct parent categories,
-    applies guardrails, and applies fuzzy matching.
+    verifies comment relevance, applies guardrails, and falls back to Generic if unmatched.
     """
     if not category_mapping:
         return "Generic", "Generic"
@@ -168,6 +198,9 @@ def fix_category_subcategory_from_db(
     category_clean = clean_for_match(category)
     sub_clean = clean_for_match(sub_category)
 
+    matched_cat = None
+    matched_sub = None
+
     # 1. Exact Category Match Check
     for db_category, db_sub_categories in category_mapping.items():
         if db_category == "Generic":
@@ -176,74 +209,98 @@ def fix_category_subcategory_from_db(
             # Try exact sub-category match under this parent category
             for db_sub in db_sub_categories:
                 if clean_for_match(db_sub) == sub_clean:
-                    return db_category, db_sub
+                    matched_cat, matched_sub = db_category, db_sub
+                    break
             
-            # Try fuzzy sub-category match within this parent category
-            best_sub = "Other"
-            best_score = 0.0
-            for db_sub in db_sub_categories:
-                score = similarity_score(sub_category, db_sub)
-                if score > best_score and score >= 0.55:
-                    best_score = score
-                    best_sub = db_sub
-            
-            if best_sub != "Other":
-                return db_category, best_sub
+            if not matched_cat:
+                # Try fuzzy sub-category match within this parent category
+                best_sub = "Other"
+                best_score = 0.0
+                for db_sub in db_sub_categories:
+                    score = similarity_score(sub_category, db_sub)
+                    if score > best_score and score >= 0.55:
+                        best_score = score
+                        best_sub = db_sub
+                
+                if best_sub != "Other":
+                    matched_cat, matched_sub = db_category, best_sub
+                else:
+                    default_sub = db_sub_categories[0] if db_sub_categories else "Generic"
+                    matched_cat, matched_sub = db_category, default_sub
+
+            break
 
     # 2. Dynamic Cross-Category Sub-Category Alignment:
-    # 2a. Check exact sub-category match across any master category in DB
-    for db_category, db_sub_categories in category_mapping.items():
-        if db_category == "Generic":
-            continue
-        for db_sub in db_sub_categories:
-            if clean_for_match(db_sub) == sub_clean:
-                return db_category, db_sub
+    if not matched_cat:
+        # 2a. Check exact sub-category match across any master category in DB
+        for db_category, db_sub_categories in category_mapping.items():
+            if db_category == "Generic":
+                continue
+            for db_sub in db_sub_categories:
+                if clean_for_match(db_sub) == sub_clean:
+                    matched_cat, matched_sub = db_category, db_sub
+                    break
+            if matched_cat:
+                break
 
-    # 2b. Check fuzzy sub-category match across all master categories in DB
-    best_global_cat = None
-    best_global_sub = None
-    best_global_score = 0.0
-    for db_category, db_sub_categories in category_mapping.items():
-        if db_category == "Generic":
-            continue
-        for db_sub in db_sub_categories:
-            score = similarity_score(sub_category, db_sub)
-            if score > best_global_score and score >= 0.45:
-                best_global_score = score
-                best_global_cat = db_category
-                best_global_sub = db_sub
+    if not matched_cat:
+        # 2b. Check fuzzy sub-category match across all master categories in DB
+        best_global_cat = None
+        best_global_sub = None
+        best_global_score = 0.0
+        for db_category, db_sub_categories in category_mapping.items():
+            if db_category == "Generic":
+                continue
+            for db_sub in db_sub_categories:
+                score = similarity_score(sub_category, db_sub)
+                if score > best_global_score and score >= 0.45:
+                    best_global_score = score
+                    best_global_cat = db_category
+                    best_global_sub = db_sub
 
-    if best_global_cat and best_global_sub:
-        return best_global_cat, best_global_sub
+        if best_global_cat and best_global_sub:
+            matched_cat, matched_sub = best_global_cat, best_global_sub
 
     # 3. Fuzzy Category Match across DB taxonomy
-    fixed_category = "Generic"
-    best_cat_score = 0.0
+    if not matched_cat:
+        fixed_category = "Generic"
+        best_cat_score = 0.0
 
-    for db_category in category_mapping.keys():
-        score = similarity_score(category, db_category)
-        if score > best_cat_score and score >= 0.50:
-            best_cat_score = score
-            fixed_category = db_category
+        for db_category in category_mapping.keys():
+            if db_category == "Generic":
+                continue
+            score = similarity_score(category, db_category)
+            if score > best_cat_score and score >= 0.50:
+                best_cat_score = score
+                fixed_category = db_category
 
-    sub_list = category_mapping.get(fixed_category, [])
-    if fixed_category != "Generic" and sub_list:
-        for db_sub in sub_list:
-            if clean_for_match(db_sub) == sub_clean:
-                return fixed_category, db_sub
-        best_sub = None
-        best_score = 0.0
-        for db_sub in sub_list:
-            score = similarity_score(sub_category, db_sub)
-            if score > best_score and score >= 0.40:
-                best_score = score
-                best_sub = db_sub
-        if best_sub:
-            return fixed_category, best_sub
+        sub_list = category_mapping.get(fixed_category, [])
+        if fixed_category != "Generic" and sub_list:
+            for db_sub in sub_list:
+                if clean_for_match(db_sub) == sub_clean:
+                    matched_cat, matched_sub = fixed_category, db_sub
+                    break
+            if not matched_cat:
+                best_sub = None
+                best_score = 0.0
+                for db_sub in sub_list:
+                    score = similarity_score(sub_category, db_sub)
+                    if score > best_score and score >= 0.40:
+                        best_score = score
+                        best_sub = db_sub
+                if best_sub:
+                    matched_cat, matched_sub = fixed_category, best_sub
 
-    # 4. Fallback DB Text Token Scan (If LLM category is unrecognized or Generic, scan comment against DB taxonomy)
-    if fixed_category == "Generic" and comment:
-        # First check direct sub-category keyword match across all categories in DB taxonomy
+    # If a category was matched from LLM output, verify if it is genuinely relevant to the comment
+    if matched_cat and matched_sub and matched_cat != "Generic":
+        if is_category_relevant_to_comment(comment, matched_cat, matched_sub, category_mapping):
+            return matched_cat, matched_sub
+        # If the candidate category is NOT relevant to the comment, clear matched_cat to trigger fallback check
+        matched_cat = None
+        matched_sub = None
+
+    # 4. Fallback DB Text Token Scan (If candidate category is unrecognized, non-matching, or Generic)
+    if comment:
         best_sub_cat = None
         best_sub_name = None
         best_sub_score = 0
@@ -252,7 +309,7 @@ def fix_category_subcategory_from_db(
                 continue
             for sub in db_subs:
                 score = comment_match_score(comment, sub)
-                if score > best_sub_score and score >= 10:
+                if score > best_sub_score and score >= 25:
                     best_sub_score = score
                     best_sub_cat = db_cat
                     best_sub_name = sub
@@ -263,8 +320,9 @@ def fix_category_subcategory_from_db(
         if detected_cat:
             detected_sub = detect_sub_category_from_db_text(comment, detected_cat, category_mapping)
             sub_categories_in_cat = category_mapping.get(detected_cat, [])
-            default_sub = sub_categories_in_cat[0] if sub_categories_in_cat else "Generic"
-            return detected_cat, detected_sub if detected_sub else default_sub
+            default_sub = detected_sub if detected_sub else (sub_categories_in_cat[0] if sub_categories_in_cat else "Generic")
+            if is_category_relevant_to_comment(comment, detected_cat, default_sub, category_mapping):
+                return detected_cat, default_sub
 
     return "Generic", "Generic"
 
@@ -362,12 +420,13 @@ def fix_sentiment_priority_text(
         "no update", "issue", "problem", "complaint", "rude", "abusive",
         "unprofessional", "rejected", "failed", "high", "hidden charges",
         "not clear", "no clarity", "without prior", "too much", "pending",
-        "unacceptable", "shocked", "never"
+        "unacceptable", "shocked", "never", "confusing", "incomplete",
+        "nightmare", "not accessible", "unaccessible", "took forever", "hard to get"
     ]
 
     negation_patterns = [
-        r"\b(not|n't|dont|doesnt|isnt|wasnt|wont|cant|never|no)\s+(happy|good|great|satisfied|helpful|quick|fast|nice|best|easy|smooth)\b",
-        r"\b(unhappy|unsatisfied|disappointed|bad|poor|worst|terrible|horrible|useless|waste)\b"
+        r"\b(not|n't|dont|doesnt|isnt|wasnt|wont|cant|never|no)\s+(happy|good|great|satisfied|helpful|quick|fast|nice|best|easy|smooth|clear|accessible)\b",
+        r"\b(unhappy|unsatisfied|disappointed|bad|poor|worst|terrible|horrible|useless|waste|confusing|incomplete|nightmare)\b"
     ]
 
     has_negation = any(re.search(pat, text) for pat in negation_patterns)
@@ -381,12 +440,12 @@ def fix_sentiment_priority_text(
         sentiment = "Negative"
         if not emotion or emotion in ["Neutral", "Happy", "Satisfied"]:
             emotion = "Angry"
-    # 2. Negation handling ("not happy", "not satisfied") - corrects false positive LLM predictions
-    elif has_negation and sentiment in ["Positive", "Neutral"]:
+    # 2. Negation handling ("not happy", "not satisfied", "confusing and incomplete", "nightmare")
+    elif (has_negation or has_negative) and sentiment in ["Positive", "Neutral"]:
         sentiment = "Negative"
-        if emotion in ["Neutral", "Happy", "Satisfied"]:
+        if emotion in ["Neutral", "Happy", "Satisfied", ""]:
             emotion = "Sad" if "happy" in text or "sad" in text else "Frustrated"
-        if priority not in ["high", "critical"]:
+        if priority not in ["medium", "high", "critical"]:
             priority = "medium"
         if not recommendations or any(p in recommendations.lower() for p in ["continue maintaining", "keep up", "good service quality", "excellent service", "maintain good"]):
             recommendations = "Investigate customer complaint and address service dissatisfaction."
@@ -486,3 +545,38 @@ def handle_positive_feedback(
             recommendations = "Acknowledge the customer's positive feedback and maintain current service quality standards."
 
     return category, sub_category, sentiment, emotion, priority, observation, recommendations
+
+
+def handle_out_of_domain_generic(
+    comment: str,
+    category: str,
+    sub_category: str,
+    observation: str,
+    recommendations: str
+) -> Tuple[str, str]:
+    """
+    Enforces domain-mismatch messages for observation and recommendations when VOC falls back to Generic (outside domain).
+    Also sanitizes in-domain categories to ensure they do not carry residual out-of-domain text.
+    """
+    domain_keywords = ["domain", "not belong", "unmatched", "outside the organization's operational domain", "configured service", "taxonomy"]
+
+    if category == "Generic" and sub_category == "Generic":
+        comment_snippet = (comment or "").strip()
+
+        if not any(k in observation.lower() for k in domain_keywords):
+            if comment_snippet:
+                observation = f"The customer's comment ('{comment_snippet[:100]}') does not belong to the organization's configured domain or service categories."
+            else:
+                observation = "The customer's comment does not belong to the organization's configured domain or service categories."
+
+        if not any(k in recommendations.lower() for k in domain_keywords):
+            recommendations = "This feedback is outside the organization's operational domain. Route the issue to the appropriate domain team or update service category mappings."
+    else:
+        # In-domain sanitization guard
+        if any(k in recommendations.lower() for k in ["outside the organization's operational domain", "does not belong to the organization"]):
+            recommendations = "Acknowledge the customer's feedback and maintain current service quality standards."
+        if any(k in observation.lower() for k in ["does not belong to the organization's configured domain"]):
+            observation = f"Customer provided feedback regarding {category.lower()}."
+
+    return observation, recommendations
+

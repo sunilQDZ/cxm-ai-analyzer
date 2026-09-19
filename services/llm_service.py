@@ -145,6 +145,11 @@ CRITICAL DATABASE CATEGORY SELECTION INSTRUCTION:
 2. Select the category and sub_category that best matches the PRIMARY topic, issue, or intent expressed in the customer comment.
 3. DO NOT invent, generate, or paraphrase category or sub-category names that are not in the list above.
 4. COPY AND PASTE the exact string name from the database list above.
+5. UNMATCHED TOPIC FALLBACK RULE: IF the customer comment's subject matter or topic does NOT match any of the AVAILABLE CATEGORIES & SUB-CATEGORIES listed above for the given client and survey, YOU MUST:
+   - set "category": "Generic" and "sub_category": "Generic".
+   - set "observation": "The customer's comment does not belong to the organization's configured domain or service categories."
+   - set "recommendations": "This feedback is outside the organization's operational domain. Route the issue to the appropriate domain team or update service category mappings."
+6. DO NOT force-fit an unrelated customer comment into an available category if the comment's issue does not genuinely match that category domain.
 
 PRIMARY ISSUE & HALLUCINATION GUARD RULES:
 1. FIRST identify the PRIMARY customer issue or praise topic.

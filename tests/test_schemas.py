@@ -1,8 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from routes import CommentItem, InferenceRequest, InsightPredictionItem, InsightResponse
-from schemas.dashboard import (
+from schemas import (
+    CommentItem,
+    InferenceRequest,
+    InsightPredictionItem,
+    InsightResponse,
     L1OptionItem,
     L2OptionItem,
     SnapshotPayload,
@@ -23,9 +26,12 @@ def test_comment_item_schema():
     assert valid.survey_id == 100
     assert valid.comments == "Great service"
 
-    # Test missing field
-    with pytest.raises(ValidationError):
-        CommentItem(id="c1", client_id=10)
+    # Test optional parameters defaulting to None and ""
+    minimal = CommentItem(id="c2")
+    assert minimal.id == "c2"
+    assert minimal.client_id is None
+    assert minimal.survey_id is None
+    assert minimal.comments == ""
 
 
 def test_inference_request_schema():

@@ -14,35 +14,12 @@ logger = logging.getLogger("cx_api")
 router = APIRouter()
 
 
-# ─────────────────────────────────────────────
-# PYDANTIC DATA MODELS
-# ─────────────────────────────────────────────
-class CommentItem(BaseModel):
-    id: str
-    client_id: int
-    survey_id: int
-    comments: str
-
-class InferenceRequest(BaseModel):
-    data: List[CommentItem]
-
-
-class InsightPredictionItem(BaseModel):
-    id: str
-    comments: str
-    is_gibberish: int
-    category: str
-    sub_category: str
-    sentiment: str
-    emotion: str
-    priority: str
-    keywords: str
-    observation: str
-    recommendations: str
-
-
-class InsightResponse(BaseModel):
-    data: List[InsightPredictionItem]
+from schemas.voc import (
+    CommentItem,
+    InferenceRequest,
+    InsightPredictionItem,
+    InsightResponse,
+)
 
 
 import config
@@ -105,13 +82,18 @@ def generate(
 
     if len(request.data) == 1:
         single = request.data[0]
-        insight = generate_insight(single.comments, single.id, client_id=single.client_id, survey_id=single.survey_id)
+        insight = generate_insight(
+            comment=single.comments or "",
+            comment_id=str(single.id) if single.id is not None else "0",
+            client_id=single.client_id,
+            survey_id=single.survey_id
+        )
         results = [InsightPredictionItem(**insight)]
     else:
         batch_tuples = [
             (
-                item.comments,
-                item.id,
+                item.comments or "",
+                str(item.id) if item.id is not None else "0",
                 item.client_id,
                 item.survey_id,
             )

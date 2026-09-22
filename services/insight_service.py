@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 from config import BATCH_MAX_WORKERS
 from services.db_service import load_categories_from_db, load_categories_from_db_with_status
@@ -22,18 +22,22 @@ logger = logging.getLogger("cx_api")
 
 
 def generate_insight(
-    comment: str,
-    comment_id: str,
-    client_id: Optional[int] = None,
-    survey_id: Optional[int] = None,
+    comment: Any,
+    comment_id: Any,
+    client_id: Optional[Any] = None,
+    survey_id: Optional[Any] = None,
     category_mapping: Optional[Dict[str, List[str]]] = None
 ) -> Dict:
     """
     Main orchestration function for single VOC comment insight generation.
+    Handles all edge cases (null comment, non-string comment_id, database offline, gibberish, LLM failures).
     """
     start = time.time()
-    print(f"[VOC STARTED] ID: {comment_id} | Client: {client_id} | Survey: {survey_id}")
-    logger.info(f"[VOC STARTED] ID: {comment_id} | Client: {client_id} | Survey: {survey_id}")
+    safe_comment_id = str(comment_id) if comment_id is not None else "0"
+    safe_comment = str(comment) if comment is not None else ""
+
+    print(f"[VOC STARTED] ID: {safe_comment_id} | Client: {client_id} | Survey: {survey_id}")
+    logger.info(f"[VOC STARTED] ID: {safe_comment_id} | Client: {client_id} | Survey: {survey_id}")
 
     db_ok = True
     if category_mapping is None:
@@ -41,11 +45,11 @@ def generate_insight(
 
     if not db_ok:
         elapsed = time.time() - start
-        print(f"[VOC COMPLETED - DB UNREACHABLE] ID: {comment_id} | Time: {elapsed:.2f}s")
-        logger.error(f"[VOC COMPLETED - DB UNREACHABLE] ID: {comment_id} | Client: {client_id} | Survey: {survey_id}")
+        print(f"[VOC COMPLETED - DB UNREACHABLE] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
+        logger.error(f"[VOC COMPLETED - DB UNREACHABLE] ID: {safe_comment_id} | Client: {client_id} | Survey: {survey_id}")
         return {
-            "id": comment_id,
-            "comments": comment or "",
+            "id": safe_comment_id,
+            "comments": safe_comment,
             "is_gibberish": 0,
             "category": "Generic",
             "sub_category": "Generic",
@@ -58,16 +62,16 @@ def generate_insight(
             "processing_time_ms": round(elapsed * 1000, 2),
         }
 
-    is_gibrish = is_gibrish_comment(comment, category_mapping=category_mapping)
+    is_gibrish = is_gibrish_comment(safe_comment, category_mapping=category_mapping)
 
     # 1. Fast-path Gibberish bypass (0.00s latency)
     if is_gibrish == 1:
         elapsed = time.time() - start
-        print(f"[VOC COMPLETED - GIBBERISH] ID: {comment_id} | Time: {elapsed:.2f}s")
-        logger.info(f"[VOC COMPLETED - GIBBERISH] ID: {comment_id} | Time: {elapsed:.2f}s")
+        print(f"[VOC COMPLETED - GIBBERISH] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
+        logger.info(f"[VOC COMPLETED - GIBBERISH] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
         return {
-            "id": comment_id,
-            "comments": comment or "",
+            "id": safe_comment_id,
+            "comments": safe_comment,
             "is_gibberish": 1,
             "category": "Generic",
             "sub_category": "Generic",
@@ -81,14 +85,14 @@ def generate_insight(
         }
 
     # 2. Text Normalization Check
-    normalized = normalize_comment(comment)
+    normalized = normalize_comment(safe_comment)
     if not normalized:
         elapsed = time.time() - start
-        print(f"✔ [VOC COMPLETED - INVALID] ID: {comment_id} | Time: {elapsed:.2f}s")
-        logger.info(f"✔ [VOC COMPLETED - INVALID] ID: {comment_id} | Time: {elapsed:.2f}s")
+        print(f"✔ [VOC COMPLETED - INVALID] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
+        logger.info(f"✔ [VOC COMPLETED - INVALID] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
         return {
-            "id": comment_id,
-            "comments": comment or "",
+            "id": safe_comment_id,
+            "comments": safe_comment,
             "is_gibberish": 1,
             "category": "Generic",
             "sub_category": "Generic",
@@ -98,7 +102,7 @@ def generate_insight(
             "keywords": "invalid",
             "observation": "Invalid comment provided.",
             "recommendations": "Please provide a valid comment.",
-            "processing_time_ms": round((time.time() - start) * 1000, 2),
+            "processing_time_ms": round(elapsed * 1000, 2),
         }
 
     # 3. LLM Inference
@@ -106,7 +110,7 @@ def generate_insight(
 
     if not llm_result:
         elapsed = time.time() - start
-        logger.error(f"LLM failed for comment_id={comment_id}")
+        logger.error(f"LLM failed for comment_id={safe_comment_id}")
         
         fb_cat, fb_sub = fix_category_subcategory_from_db(
             category="Generic",
@@ -115,11 +119,11 @@ def generate_insight(
             comment=normalized
         )
 
-        print(f"[VOC COMPLETED - LLM OFFLINE FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
-        logger.info(f"[VOC COMPLETED - LLM OFFLINE FALLBACK] ID: {comment_id} | Time: {elapsed:.2f}s")
+        print(f"[VOC COMPLETED - LLM OFFLINE FALLBACK] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
+        logger.info(f"[VOC COMPLETED - LLM OFFLINE FALLBACK] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
 
         return {
-            "id": comment_id,
+            "id": safe_comment_id,
             "comments": normalized,
             "is_gibberish": 0,
             "category": fb_cat,
@@ -185,11 +189,11 @@ def generate_insight(
 
     elapsed = time.time() - start
 
-    print(f"[VOC COMPLETED] ID: {comment_id} | Time: {elapsed:.2f}s")
-    logger.info(f"[VOC COMPLETED] ID: {comment_id} | Time: {elapsed:.2f}s")
+    print(f"[VOC COMPLETED] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
+    logger.info(f"[VOC COMPLETED] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
 
     return {
-        "id": comment_id,
+        "id": safe_comment_id,
         "comments": normalized,
         "is_gibberish": 0,
         "category": category,
@@ -204,7 +208,7 @@ def generate_insight(
     }
 
 
-def process_comments_batch(comments_list: List[Tuple[str, str, Optional[int], Optional[int]]]) -> List[Dict]:
+def process_comments_batch(comments_list: List[Tuple[Any, Any, Optional[Any], Optional[Any]]]) -> List[Dict]:
     """
     Batch processing coordinator for VOC comments array. Each element is (comment, comment_id, client_id, survey_id).
     """
@@ -213,10 +217,12 @@ def process_comments_batch(comments_list: List[Tuple[str, str, Optional[int], Op
     print(f"[BATCH STARTED] Processing {total_items} VOC item(s)...")
     print(f"================================================================================\n")
     logger.info(f"[BATCH STARTED] Processing {total_items} VOC item(s)...")
+
     if BATCH_MAX_WORKERS <= 1 or len(comments_list) <= 1:
         results = []
         for item in comments_list:
-            comment, comment_id = item[0], item[1]
+            comment = item[0]
+            comment_id = str(item[1]) if item[1] is not None else "0"
             cid = item[2] if len(item) > 2 else None
             sid = item[3] if len(item) > 3 else None
             try:
@@ -225,7 +231,7 @@ def process_comments_batch(comments_list: List[Tuple[str, str, Optional[int], Op
                 logger.error(f"Error processing {comment_id}: {str(e)[:80]}")
                 results.append({
                     "id": comment_id,
-                    "comments": comment or "",
+                    "comments": str(comment) if comment is not None else "",
                     "is_gibberish": 0,
                     "category": "Generic",
                     "sub_category": "Generic",
@@ -244,7 +250,8 @@ def process_comments_batch(comments_list: List[Tuple[str, str, Optional[int], Op
     with ThreadPoolExecutor(max_workers=BATCH_MAX_WORKERS) as executor:
         future_map = {}
         for index, item in enumerate(comments_list):
-            comment, comment_id = item[0], item[1]
+            comment = item[0]
+            comment_id = str(item[1]) if item[1] is not None else "0"
             cid = item[2] if len(item) > 2 else None
             sid = item[3] if len(item) > 3 else None
             fut = executor.submit(generate_insight, comment, comment_id, client_id=cid, survey_id=sid)
@@ -253,14 +260,14 @@ def process_comments_batch(comments_list: List[Tuple[str, str, Optional[int], Op
         for future in as_completed(future_map):
             index = future_map[future]
             item = comments_list[index]
-            comment_id = item[1]
+            comment_id = str(item[1]) if item[1] is not None else "0"
             try:
                 indexed_results[index] = future.result()
             except Exception as e:
                 logger.error(f"Error processing {comment_id}: {str(e)[:80]}")
                 indexed_results[index] = {
                     "id": comment_id,
-                    "comments": item[0] or "",
+                    "comments": str(item[0]) if item[0] is not None else "",
                     "is_gibberish": 0,
                     "category": "Generic",
                     "sub_category": "Generic",
@@ -278,3 +285,4 @@ def process_comments_batch(comments_list: List[Tuple[str, str, Optional[int], Op
 
 # Backward-compatible alias
 process_batch_insights = process_comments_batch
+

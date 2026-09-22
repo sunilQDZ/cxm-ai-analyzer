@@ -145,10 +145,9 @@ CRITICAL DATABASE CATEGORY SELECTION INSTRUCTION:
 2. Select the category and sub_category that best matches the PRIMARY topic, issue, or intent expressed in the customer comment.
 3. DO NOT invent, generate, or paraphrase category or sub-category names that are not in the list above.
 4. COPY AND PASTE the exact string name from the database list above.
-5. UNMATCHED TOPIC FALLBACK RULE: IF the customer comment's subject matter or topic does NOT match any of the AVAILABLE CATEGORIES & SUB-CATEGORIES listed above for the given client and survey, YOU MUST:
-   - set "category": "Generic" and "sub_category": "Generic".
-   - set "observation": "The customer's comment does not belong to the organization's configured domain or service categories."
-   - set "recommendations": "This feedback is outside the organization's operational domain. Route the issue to the appropriate domain team or update service category mappings."
+5. UNMATCHED TOPIC & GENERIC FALLBACK RULES:
+   - OUT-OF-DOMAIN FEEDBACK: IF the customer comment's topic is completely outside the organization's business or operational domain, set "category": "Generic", "sub_category": "Generic", "observation": "The customer's comment does not belong to the organization's configured domain or service categories.", and "recommendations": "This feedback is outside the organization's operational domain. Route the issue to the appropriate domain team or update service category mappings."
+   - IN-DOMAIN FEEDBACK WITHOUT MATCHING SUBCATEGORY: IF the customer comment IS relevant to the organization's business/domain but does not fit any specific sub-category in the list above, set "category": "Generic" and "sub_category": "Generic", BUT provide a factual, specific "observation" describing the comment and an actionable "recommendations" addressing it (DO NOT claim that it does not belong to the domain).
 6. DO NOT force-fit an unrelated customer comment into an available category if the comment's issue does not genuinely match that category domain.
 
 PRIMARY ISSUE & HALLUCINATION GUARD RULES:
@@ -165,14 +164,14 @@ DO NOT INCLUDE:
 - numbers or generic words (e.g. "thing", "customer", "shows")
 
 GOOD KEYWORDS EXAMPLES:
-- "expensive medical facility"
-- "high hospital cost"
-- "duplicate EMI deduction"
+- "long wait time"
+- "duplicate payment deduction"
 - "mobile app crash"
 - "unhelpful staff service"
+- "delayed delivery response"
 
 BAD KEYWORDS EXAMPLES:
-- "the, hospital, medical, facility"
+- "the, service, issue, facility"
 - "soo, expensive, is"
 - "it, is, bad"
 
@@ -253,8 +252,8 @@ def call_ollama_llm(
                     "num_thread": OLLAMA_NUM_THREADS,
                     "num_ctx": OLLAMA_NUM_CTX,
                     "num_predict": OLLAMA_NUM_PREDICT,
-                    "temperature": 0.2,
-                    "top_p": 0.9,
+                    "temperature": 0.0,
+                    "top_p": 1.0,
                     "top_k": 40,
                 },
             }

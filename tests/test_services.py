@@ -1,7 +1,3 @@
-try:
-    import pytest
-except ImportError:
-    pytest = None
 from unittest.mock import patch, MagicMock
 
 from services.ai_service import parse_llm_json, call_openai_completion, call_ai_completion
@@ -110,50 +106,61 @@ def test_rule_service():
 def test_unmatched_voc_fallback_to_generic():
     from services.rule_service import fix_category_subcategory_from_db, is_category_relevant_to_comment
 
-    # Medical taxonomy setup for client/survey
-    medical_taxonomy = {
-        "Doctor Consultation": ["Doctor Behavior", "Appointment Delay"],
-        "Hospitalization": ["Room Cleanliness", "Nursing Care"],
-        "Medical Claims": ["Claim Approval", "Reimbursement"]
+    # Dynamic taxonomy setup for client/survey
+    domain_taxonomy = {
+        "Customer Service": ["Agent Behavior", "Response Delay"],
+        "Technical Support": ["System Crash", "Bug Resolution"],
+        "Billing Services": ["Payment Processing", "Refund Status"]
     }
 
-    # 1. Unmatched VOC (loan approval comment) should NOT map to medical categories or force-fit
-    unmatched_comment = "my loan is still not approved i dont know why."
+    # 1. Unmatched VOC should NOT force-fit into unrelated categories
+    unmatched_comment = "I would like to know the weather forecast for tomorrow."
     cat, sub = fix_category_subcategory_from_db(
-        category="Billing and Insurance",
-        sub_category="Insurance Coverage Clarity",
-        category_mapping=medical_taxonomy,
+        category="Billing Services",
+        sub_category="Payment Processing",
+        category_mapping=domain_taxonomy,
         comment=unmatched_comment
     )
     assert cat == "Generic"
     assert sub == "Generic"
 
-    # 2. Matched VOC (doctor comment) should map correctly
-    matched_comment = "The doctor was very caring during my consultation."
+    # 2. Matched VOC should map correctly
+    matched_comment = "The customer service agent was very helpful during my call."
     m_cat, m_sub = fix_category_subcategory_from_db(
-        category="Doctor Consultation",
-        sub_category="Doctor Behavior",
-        category_mapping=medical_taxonomy,
+        category="Customer Service",
+        sub_category="Agent Behavior",
+        category_mapping=domain_taxonomy,
         comment=matched_comment
     )
-    assert m_cat == "Doctor Consultation"
-    assert m_sub == "Doctor Behavior"
+    assert m_cat == "Customer Service"
+    assert m_sub == "Agent Behavior"
+
 
 
 def test_handle_out_of_domain_generic():
     from services.rule_service import handle_out_of_domain_generic
 
-    comment = "my loan is not approved yet"
-    obs, rec = handle_out_of_domain_generic(
-        comment=comment,
+    # Case A: Out-of-domain flagged feedback
+    obs_out, rec_out = handle_out_of_domain_generic(
+        comment="unrelated text",
         category="Generic",
         sub_category="Generic",
-        observation="Default observation",
-        recommendations="Default recommendation"
+        observation="The comment does not belong to configured domain",
+        recommendations="This feedback is outside operational domain"
     )
+    assert "does not belong" in obs_out or "domain" in obs_out
+    assert "outside" in rec_out or "domain" in rec_out
 
-    assert "does not belong" in obs or "domain" in obs
-    assert "outside" in rec or "domain" in rec
+    # Case B: In-domain feedback assigned Generic category (must preserve observation)
+    obs_in, rec_in = handle_out_of_domain_generic(
+        comment="my loan is not approved yet",
+        category="Generic",
+        sub_category="Generic",
+        observation="Customer expressed dissatisfaction with loan approval turnaround.",
+        recommendations="Review loan application processing times."
+    )
+    assert "Customer expressed dissatisfaction with loan approval turnaround." in obs_in
+    assert "does not belong" not in obs_in
 
 
 
@@ -217,3 +224,30 @@ def test_validate_payload_data_trend():
     )
     is_valid, msg = validate_payload_data("trend_analysis", req_invalid)
     assert is_valid is False
+
+
+def test_load_categories_from_db_with_client_id_and_survey_id():
+    from services.db_service import load_categories_from_db_with_status, _normalize_int_id
+    assert _normalize_int_id("123") == 123
+    assert _normalize_int_id(456) == 456
+    assert _normalize_int_id(None) is None
+    assert _normalize_int_id("invalid") is None
+
+    mapping, status = load_categories_from_db_with_status(client_id="10", survey_id=5)
+    assert isinstance(mapping, dict)
+    assert "Generic" in mapping
+
+
+def test_generate_insight_null_and_numeric_edge_cases():
+    from services.insight_service import generate_insight
+    # Integer comment_id, None comment
+    res1 = generate_insight(comment=None, comment_id=12345, client_id="101", survey_id="202")
+    assert res1["id"] == "12345"
+    assert res1["is_gibberish"] == 1
+    assert res1["category"] == "Generic"
+
+    # Numeric comment (e.g. 99999)
+    res2 = generate_insight(comment=99999, comment_id="c-999")
+    assert res2["id"] == "c-999"
+    assert "category" in res2
+

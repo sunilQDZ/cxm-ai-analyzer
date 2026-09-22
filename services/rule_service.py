@@ -214,7 +214,7 @@ def fix_category_subcategory_from_db(
             
             if not matched_cat:
                 # Try fuzzy sub-category match within this parent category
-                best_sub = "Other"
+                best_sub = None
                 best_score = 0.0
                 for db_sub in db_sub_categories:
                     score = similarity_score(sub_category, db_sub)
@@ -222,7 +222,7 @@ def fix_category_subcategory_from_db(
                         best_score = score
                         best_sub = db_sub
                 
-                if best_sub != "Other":
+                if best_sub:
                     matched_cat, matched_sub = db_category, best_sub
                 else:
                     default_sub = db_sub_categories[0] if db_sub_categories else "Generic"
@@ -261,11 +261,10 @@ def fix_category_subcategory_from_db(
         if best_global_cat and best_global_sub:
             matched_cat, matched_sub = best_global_cat, best_global_sub
 
-    # 3. Fuzzy Category Match across DB taxonomy
+    # 3. Fuzzy Match for misspellings / minor variations
     if not matched_cat:
         fixed_category = "Generic"
         best_cat_score = 0.0
-
         for db_category in category_mapping.keys():
             if db_category == "Generic":
                 continue
@@ -295,7 +294,6 @@ def fix_category_subcategory_from_db(
     if matched_cat and matched_sub and matched_cat != "Generic":
         if is_category_relevant_to_comment(comment, matched_cat, matched_sub, category_mapping):
             return matched_cat, matched_sub
-        # If the candidate category is NOT relevant to the comment, clear matched_cat to trigger fallback check
         matched_cat = None
         matched_sub = None
 
@@ -481,6 +479,9 @@ def fix_sentiment_priority_text(
     if emotion not in EMOTIONS:
         emotion = "Neutral"
 
+    if priority not in PRIORITIES:
+        priority = "low"
+
     # Operational Complaints Field Consistency Enforcement (VOC_007, VOC_009, VOC_010, VOC_002, VOC_004)
     if any(k in text for k in ["extremely slow", "loading slow", "taking several minutes", "nobody called", "no one called", "promised to resolve", "transaction failed", "pending for over"]):
         sentiment = "Negative"
@@ -491,7 +492,7 @@ def fix_sentiment_priority_text(
 
     # Simple fallback only if observation or recommendation text is empty
     if not observation:
-        observation = f"Customer provided feedback: '{comment.strip()}'"
+        observation = "Customer provided feedback regarding their experience."
 
     if not recommendations:
         recommendations = "Review the reported customer feedback and process appropriate action."
@@ -555,24 +556,28 @@ def handle_out_of_domain_generic(
     recommendations: str
 ) -> Tuple[str, str]:
     """
-    Enforces domain-mismatch messages for observation and recommendations when VOC falls back to Generic (outside domain).
-    Also sanitizes in-domain categories to ensure they do not carry residual out-of-domain text.
+    Handles Generic category observations & recommendations:
+    - If feedback is explicitly out-of-domain (LLM flagged domain mismatch), preserve or format out-of-domain message.
+    - If feedback is in-domain but categorized as Generic (no specific subcategory available), PRESERVE the actual observation & recommendation.
     """
     domain_keywords = ["domain", "not belong", "unmatched", "outside the organization's operational domain", "configured service", "taxonomy"]
 
     if category == "Generic" and sub_category == "Generic":
-        comment_snippet = (comment or "").strip()
+        is_out_of_domain_flagged = any(k in (observation + " " + recommendations).lower() for k in domain_keywords)
 
-        if not any(k in observation.lower() for k in domain_keywords):
-            if comment_snippet:
-                observation = f"The customer's comment ('{comment_snippet[:100]}') does not belong to the organization's configured domain or service categories."
-            else:
+        if is_out_of_domain_flagged:
+            if not observation or any(k in observation.lower() for k in domain_keywords):
                 observation = "The customer's comment does not belong to the organization's configured domain or service categories."
 
-        if not any(k in recommendations.lower() for k in domain_keywords):
-            recommendations = "This feedback is outside the organization's operational domain. Route the issue to the appropriate domain team or update service category mappings."
+            if not recommendations or any(k in recommendations.lower() for k in domain_keywords):
+                recommendations = "This feedback is outside the organization's operational domain. Route the issue to the appropriate domain team or update service category mappings."
+        else:
+            if not observation or observation == "Customer provided feedback":
+                observation = "Customer provided general feedback regarding their service experience."
+            if not recommendations:
+                recommendations = "Review customer feedback and ensure appropriate operational follow-up."
     else:
-        # In-domain sanitization guard
+        # In-domain sanitization guard for specific categories
         if any(k in recommendations.lower() for k in ["outside the organization's operational domain", "does not belong to the organization"]):
             recommendations = "Acknowledge the customer's feedback and maintain current service quality standards."
         if any(k in observation.lower() for k in ["does not belong to the organization's configured domain"]):

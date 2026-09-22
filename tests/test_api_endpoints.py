@@ -1,4 +1,3 @@
-import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
@@ -235,3 +234,52 @@ def test_dashboard_analyze_sentiment_success(mock_ai):
     assert res_data["dashboard_type"] == "sentiment_analysis"
     assert "key_insights" in res_data["analysis"]
     assert "key_alerts" in res_data["analysis"]
+
+
+def test_generate_edge_case_missing_optional_fields():
+    # Item without client_id, survey_id, and with numeric id
+    payload = {
+        "data": [
+            {"id": 999, "comments": "The representative was extremely polite and helpful."}
+        ]
+    }
+    response = client.post("/generate", json=payload, headers=VALID_HEADERS)
+    assert response.status_code == 200
+    res_data = response.json()
+    assert len(res_data["data"]) == 1
+    assert res_data["data"][0]["id"] == "999"
+    assert res_data["data"][0]["sentiment"] in ["Positive", "Neutral", "Negative"]
+
+
+def test_generate_mixed_client_and_survey_ids():
+    payload = {
+        "data": [
+            {"id": "item-1", "client_id": 101, "survey_id": 5, "comments": "App crashed when submitting payment."},
+            {"id": "item-2", "client_id": 202, "survey_id": 12, "comments": "Quick response from customer care team."},
+            {"id": "item-3", "client_id": "303", "survey_id": "99", "comments": "Good overall experience."}
+        ]
+    }
+    response = client.post("/generate", json=payload, headers=VALID_HEADERS)
+    assert response.status_code == 200
+    res_data = response.json()
+    assert len(res_data["data"]) == 3
+    assert res_data["data"][0]["id"] == "item-1"
+    assert res_data["data"][1]["id"] == "item-2"
+    assert res_data["data"][2]["id"] == "item-3"
+
+
+def test_generate_gibberish_and_valid_mixed_batch():
+    payload = {
+        "data": [
+            {"id": "g-1", "client_id": 1, "survey_id": 1, "comments": "asdfghjkl zxcvbnm"},
+            {"id": "v-1", "client_id": 1, "survey_id": 1, "comments": "Great service and fast delivery time."}
+        ]
+    }
+    response = client.post("/generate", json=payload, headers=VALID_HEADERS)
+    assert response.status_code == 200
+    res_data = response.json()
+    assert len(res_data["data"]) == 2
+    assert res_data["data"][0]["is_gibberish"] == 1
+    assert res_data["data"][0]["category"] == "Generic"
+    assert res_data["data"][1]["is_gibberish"] == 0
+

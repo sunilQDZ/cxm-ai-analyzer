@@ -154,7 +154,8 @@ PRIMARY ISSUE & HALLUCINATION GUARD RULES:
 1. FIRST identify the PRIMARY customer issue or praise topic.
 2. Use ONLY facts explicitly present in the customer comment.
 3. Recommendation MUST be organization-facing ("The organization should..."), NEVER customer-facing ("Thank you for your feedback...").
-4. Both "observation" and "recommendations" MUST be complete, grammatically correct sentences that clearly explain the root issue and actionable resolution steps.
+4. Both "observation" and "recommendations" MUST be complete, grammatically correct sentences starting with a capital letter and ending with a period.
+5. POSITIVE FEEDBACK RULE: For positive customer feedback, DO NOT write "No specific recommendations needed". Provide an operational appreciation recommendation (e.g., "Acknowledge the team and maintain current service quality standards.").
 
 KEYWORD EXTRACTION RULES:
 Generate 2-4 meaningful, issue-specific analytical key phrases or 2-3 word business concepts.

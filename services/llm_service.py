@@ -154,6 +154,7 @@ PRIMARY ISSUE & HALLUCINATION GUARD RULES:
 1. FIRST identify the PRIMARY customer issue or praise topic.
 2. Use ONLY facts explicitly present in the customer comment.
 3. Recommendation MUST be organization-facing ("The organization should..."), NEVER customer-facing ("Thank you for your feedback...").
+4. Both "observation" and "recommendations" MUST be complete, grammatically correct sentences that clearly explain the root issue and actionable resolution steps.
 
 KEYWORD EXTRACTION RULES:
 Generate 2-4 meaningful, issue-specific analytical key phrases or 2-3 word business concepts.
@@ -252,7 +253,7 @@ def call_ollama_llm(
                     "num_thread": OLLAMA_NUM_THREADS,
                     "num_ctx": OLLAMA_NUM_CTX,
                     "num_predict": OLLAMA_NUM_PREDICT,
-                    "temperature": 0.0,
+                    "temperature": 0.2,
                     "top_p": 1.0,
                     "top_k": 40,
                 },

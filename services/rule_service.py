@@ -482,6 +482,15 @@ def fix_sentiment_priority_text(
     if priority not in PRIORITIES:
         priority = "low"
 
+    # Contrastive Sentiment Override ("Praise + BUT/HOWEVER/ALTHOUGH + Complaint")
+    if any(conj in text for conj in [" but ", " however ", " although ", " except "]):
+        if any(neg in text for neg in ["stop loading", "stopped", "late", "delay", "crashed", "took almost", "took too long", "failed", "inaccurate", "uncomfortable", "unstable", "difficult", "confusing", "cold", "excessive"]):
+            sentiment = "Negative"
+            if emotion in ["Neutral", "Happy", "Satisfied", ""]:
+                emotion = "Frustrated"
+            if priority == "low" or not priority:
+                priority = "medium"
+
     # Operational Complaints Field Consistency Enforcement (VOC_007, VOC_009, VOC_010, VOC_002, VOC_004)
     if any(k in text for k in ["extremely slow", "loading slow", "taking several minutes", "nobody called", "no one called", "promised to resolve", "transaction failed", "pending for over"]):
         sentiment = "Negative"

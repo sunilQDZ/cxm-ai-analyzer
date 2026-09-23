@@ -68,6 +68,7 @@ def extract_keywords(comment: str, category: str = "", sub_category: str = "", l
         "i", "me", "my", "myself", "we", "our", "ours", "you", "your", "yours", "he", "him", "she", "her", "it", "its", "they", "them", "their",
         "this", "that", "these", "those", "which", "what", "who", "whom",
         "don", "t", "ve", "re", "ll", "m", "dont", "doesnt", "didnt", "isnt", "wasnt", "wont", "cant",
+        "not", "no", "never", "because", "contained", "provide", "provides", "provided", "providing", "took", "take", "frequently", "often", "arrived", "center", "completed", "got", "get",
         "ten", "two", "three", "four", "five", "six", "seven", "eight", "nine", "days", "weeks", "hours", "yesterday",
         "shows", "several", "thing", "customer", "page", "browser", "please", "kindly", "thank", "thanks"
     }

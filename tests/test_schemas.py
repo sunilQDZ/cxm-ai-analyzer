@@ -9,9 +9,10 @@ from schemas import (
     L1OptionItem,
     L2OptionItem,
     SnapshotPayload,
+    CategorySentimentDetail,
     SentimentPayload,
     MonthTrendPayload,
-    DashboardAnalyzeRequest,
+    SnapshotAnalyzeRequest,
     DriverItem,
     SnapshotResponseData,
     InsightsAlertsResponseData,
@@ -90,13 +91,21 @@ def test_dashboard_schemas():
     assert snapshot.segment == "detractor"
     assert snapshot.l1.count == 15
 
-    sentiment = SentimentPayload(total_mentions=100, positive=70, negative=30, responses=["Good", "Bad"])
-    assert sentiment.total_mentions == 100
+    pos_detail = CategorySentimentDetail(name="Fast Processing", mentions=300, positive=250, negative=50)
+    neg_detail = CategorySentimentDetail(name="Waiting Time", mentions=150, positive=20, negative=130)
+    sentiment = SentimentPayload(
+        positive_category=pos_detail,
+        negative_category=neg_detail
+    )
+    assert sentiment.positive_category.name == "Fast Processing"
+    assert sentiment.negative_category.name == "Waiting Time"
+    assert sentiment.positive_category.positive == 250
+    assert sentiment.negative_category.negative == 130
 
     month_trend = MonthTrendPayload(month="2026-08", data={"nps": 45})
     assert month_trend.month == "2026-08"
 
-    req = DashboardAnalyzeRequest(
+    req = SnapshotAnalyzeRequest(
         dashboard_type="snapshot",
         category="Delivery Speed",
         data={"l1": l1.model_dump(), "customer_responses": ["Slow"]}

@@ -8,11 +8,9 @@ import time
 from typing import Any, Dict, Optional, Tuple
 import requests
 
-logger = logging.getLogger("cx_api")
+from config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_BASE_URL, OLLAMA_HOST, OLLAMA_MODEL
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+logger = logging.getLogger("cx_api")
 
 
 def parse_llm_json(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -50,7 +48,7 @@ def call_openai_completion(prompt: str) -> Optional[Dict[str, Any]]:
     """
     Calls OpenAI Chat Completions API with structured JSON output mode.
     """
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key = OPENAI_API_KEY.strip()
     if not api_key or api_key == "your_openai_api_key_here":
         return None
 
@@ -81,16 +79,44 @@ def call_openai_completion(prompt: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def call_ollama_dashboard_completion(prompt: str) -> Optional[Dict[str, Any]]:
+    """
+    Fallback completion using local Ollama model if OpenAI API is unreachable.
+    """
+    url = f"{OLLAMA_HOST.rstrip('/')}/api/generate"
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.2
+        }
+    }
+    try:
+        logger.info(f"[OLLAMA DASHBOARD FALLBACK] Sending request to Ollama model '{OLLAMA_MODEL}'...")
+        res = requests.post(url, json=payload, timeout=60)
+        res.raise_for_status()
+        content = res.json().get("response", "")
+        return parse_llm_json(content)
+    except Exception as e:
+        logger.warning(f"[OLLAMA DASHBOARD FALLBACK FAILED] {e}")
+        return None
+
+
 def call_ai_completion(prompt: str) -> Tuple[Optional[Dict[str, Any]], str]:
     """
     Dashboard AI Completion Engine:
-    Exclusively calls OpenAI API.
-    The Ollama pipeline (used for VOC comment analysis) is kept completely separate in services/llm_service.py.
+    Tries OpenAI API first. If OpenAI fails or is unconfigured, falls back to local Ollama.
     Returns (result_dict, provider_name).
     """
     openai_result = call_openai_completion(prompt)
     if openai_result:
         return openai_result, "openai"
 
-    return None, "openai"
+    logger.warning("[AI SERVICE FALLBACK] OpenAI API call failed or unavailable. Falling back to Ollama local LLM.")
+    ollama_result = call_ollama_dashboard_completion(prompt)
+    if ollama_result:
+        return ollama_result, "ollama"
+
+    return None, "unavailable"
 

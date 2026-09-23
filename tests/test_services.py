@@ -6,7 +6,7 @@ from services.keyword_service import extract_keywords, normalize_text
 from services.rule_service import clean_for_match, similarity_score, comment_match_score, detect_category_from_db_text
 from services.db_service import clear_category_cache
 from services.dashboard_analysis import validate_payload_data
-from schemas.dashboard import DashboardAnalyzeRequest
+from schemas.dashboard import SnapshotAnalyzeRequest, SentimentAnalyzeRequest, TrendAnalyzeRequest
 
 
 def test_parse_llm_json_valid():
@@ -170,7 +170,7 @@ def test_db_service_cache():
 
 
 def test_validate_payload_data_snapshot():
-    req_valid = DashboardAnalyzeRequest(
+    req_valid = SnapshotAnalyzeRequest(
         dashboard_type="snapshot",
         category="Support",
         data={"customer_responses": ["Good service"]}
@@ -178,7 +178,7 @@ def test_validate_payload_data_snapshot():
     is_valid, msg = validate_payload_data("snapshot", req_valid)
     assert is_valid is True
 
-    req_invalid = DashboardAnalyzeRequest(
+    req_invalid = SnapshotAnalyzeRequest(
         dashboard_type="snapshot",
         category="Support",
         data={}
@@ -189,15 +189,27 @@ def test_validate_payload_data_snapshot():
 
 
 def test_validate_payload_data_sentiment():
-    req_valid = DashboardAnalyzeRequest(
+    req_valid = SentimentAnalyzeRequest(
         dashboard_type="sentiment_analysis",
-        category="Support",
-        data={"total_mentions": 10, "responses": ["Great"]}
+        data={
+            "positive_category": {
+                "name": "Fast Processing",
+                "mentions": 300,
+                "positive": 250,
+                "negative": 50
+            },
+            "negative_category": {
+                "name": "Waiting Time",
+                "mentions": 150,
+                "positive": 20,
+                "negative": 130
+            }
+        }
     )
     is_valid, msg = validate_payload_data("sentiment_analysis", req_valid)
     assert is_valid is True
 
-    req_invalid = DashboardAnalyzeRequest(
+    req_invalid = SentimentAnalyzeRequest(
         dashboard_type="sentiment_analysis",
         category="Support",
         data={"total_mentions": 0}
@@ -207,16 +219,27 @@ def test_validate_payload_data_sentiment():
 
 
 def test_validate_payload_data_trend():
-    req_valid = DashboardAnalyzeRequest(
+    req_valid = TrendAnalyzeRequest(
         dashboard_type="trend_analysis",
-        category="Support",
-        month_1={"data": {"nps": 50}},
-        month_2={"data": {"nps": 60}}
+        month_1={
+            "month": "August",
+            "data": {
+                "positive_category": {"name": "Fast Processing", "mentions": 250, "positive": 200, "negative": 50},
+                "negative_category": {"name": "Waiting Time", "mentions": 180, "positive": 30, "negative": 150}
+            }
+        },
+        month_2={
+            "month": "September",
+            "data": {
+                "positive_category": {"name": "Fast Processing", "mentions": 300, "positive": 250, "negative": 50},
+                "negative_category": {"name": "Waiting Time", "mentions": 150, "positive": 20, "negative": 130}
+            }
+        }
     )
     is_valid, msg = validate_payload_data("trend_analysis", req_valid)
     assert is_valid is True
 
-    req_invalid = DashboardAnalyzeRequest(
+    req_invalid = TrendAnalyzeRequest(
         dashboard_type="trend_analysis",
         category="Support",
         month_1={},

@@ -4,4 +4,5 @@ pydantic
 pymysql
 cryptography
 requests
+httpx
 pytest

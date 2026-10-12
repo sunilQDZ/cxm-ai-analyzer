@@ -69,39 +69,6 @@ def analyze_trend(
     return analyze_dashboard(request)
 
 
-@router.post("/analyze")
-def analyze_unified(
-    payload: dict,
-    x_api_key: Optional[str] = Header(default=None)
-):
-    """
-    Unified Dashboard Gateway Endpoint:
-    Routes payload dynamically based on dashboard_type (snapshot, sentiment_analysis, trend_analysis).
-    """
-    require_api_key(x_api_key)
-    db_type = (payload.get("dashboard_type") or "").strip().lower()
 
-    if db_type == "snapshot":
-        req = SnapshotAnalyzeRequest(**payload)
-    elif db_type == "sentiment_analysis":
-        req = SentimentAnalyzeRequest(**payload)
-    elif db_type == "trend_analysis":
-        req = TrendAnalyzeRequest(**payload)
-    else:
-        class GenericRequest:
-            def __init__(self, data_dict):
-                for k, v in data_dict.items():
-                    setattr(self, k, v)
-                if not hasattr(self, "dashboard_type"):
-                    self.dashboard_type = db_type
-                if not hasattr(self, "category"):
-                    self.category = data_dict.get("category")
-                if not hasattr(self, "start_date"):
-                    self.start_date = data_dict.get("start_date")
-                if not hasattr(self, "end_date"):
-                    self.end_date = data_dict.get("end_date")
-        req = GenericRequest(payload)
-
-    return analyze_dashboard(req)
 
 

@@ -6,3 +6,6 @@ cryptography
 requests
 httpx
 pytest
+sqlalchemy
+scipy
+numpy

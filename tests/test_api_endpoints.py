@@ -482,20 +482,24 @@ def test_dashboard_snapshot_multi_segment_payload(mock_ai):
     assert drivers[1]["sentiment_type"] == "detractor"
 
 
+
+
 @patch("services.dashboard_analysis.call_ai_completion")
-def test_dashboard_analyze_unified_endpoint(mock_ai):
+def test_dashboard_snapshot_mode_1_l1_l2(mock_ai):
     mock_ai.return_value = (
         {
-            "key_insights": [
+            "drivers": [
                 {
-                    "title": "Positive Trajectory Shift",
-                    "description": "Positive sentiment increased by 15% from August to September."
-                }
-            ],
-            "key_alerts": [
+                    "title": "Efficient Application Process",
+                    "sentiment_type": "promoter",
+                    "description": "Promoters highlighted the smooth and efficient application process.",
+                    "recommendation": "Maintain and enhance the streamlined application process."
+                },
                 {
-                    "title": "Steady Waiting Time Negative Mentions",
-                    "description": "Negative mentions regarding waiting time remained steady."
+                    "title": "Lengthy Loan Approval Timelines",
+                    "sentiment_type": "detractor",
+                    "description": "Detractors expressed frustration over lengthy loan approval timelines.",
+                    "recommendation": "Optimize the loan approval process to reduce timelines."
                 }
             ]
         },
@@ -503,34 +507,121 @@ def test_dashboard_analyze_unified_endpoint(mock_ai):
     )
 
     payload = {
-        "survey_id": 69,
-        "client_id": 1,
-        "dashboard_type": "trend_analysis",
-        "month_1": {
-            "month": "August",
-            "data": {
-                "positive_category": {"name": "Fast Processing", "mentions": 250, "positive": 200, "negative": 50},
-                "negative_category": {"name": "Waiting Time", "mentions": 180, "positive": 30, "negative": 150}
+        "data": [
+            {
+                "l1": {
+                    "count": 884,
+                    "question": "Basis your loan disbursement experience how likely are you to recommend Aavas Financiers to friends and family on a scale of 0-10",
+                    "selected_option": "Promoter(9-10)"
+                },
+                "l2": {
+                    "count": 883,
+                    "question": "We are happy for your experience. Please share the reason for your rating",
+                    "selected_option": "Inquiry Experience, Application process, Form filling and Documentation"
+                },
+                "segment": "promoter",
+                "customer_responses": None
+            },
+            {
+                "l1": {
+                    "count": 3230,
+                    "question": "Basis your loan disbursement experience how likely are you to recommend Aavas Financiers to friends and family on a scale of 0-10",
+                    "selected_option": "Detractor(0-6)"
+                },
+                "l2": {
+                    "count": 3229,
+                    "question": "We are sorry about your experience. Please share the reason for your rating",
+                    "selected_option": "Inquiry Experience, Application process, Form filling and Documentation"
+                },
+                "segment": "detractor",
+                "customer_responses": None
             }
-        },
-        "month_2": {
-            "month": "September",
-            "data": {
-                "positive_category": {"name": "Fast Processing", "mentions": 300, "positive": 250, "negative": 50},
-                "negative_category": {"name": "Waiting Time", "mentions": 150, "positive": 20, "negative": 130}
-            }
-        }
+        ],
+        "start_date": "2023-01-01",
+        "end_date": "2026-09-30",
+        "client_id": 18,
+        "survey_id": 8,
+        "dashboard_type": "snapshot"
     }
-    response = client.post("/api/dashboard/analyze", json=payload, headers=VALID_HEADERS)
+
+    response = client.post("/api/dashboard/snapshot", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
     assert res_data["status"] == "ok"
-    assert "months" in res_data["analysis"]
-    assert "August" in res_data["analysis"]["months"]
-    assert "September" in res_data["analysis"]["months"]
-    assert "comparison_period" not in res_data["analysis"]
-    assert "key_insights" not in res_data["analysis"]
-    assert "key_alerts" not in res_data["analysis"]
+    assert res_data["dashboard_type"] == "snapshot"
+    assert "Promoter(9-10)" in res_data["category"]
+    assert len(res_data["analysis"]["drivers"]) == 2
+    assert res_data["analysis"]["drivers"][0]["sentiment_type"] == "promoter"
+    assert res_data["analysis"]["drivers"][1]["sentiment_type"] == "detractor"
+
+
+@patch("services.dashboard_analysis.call_ai_completion")
+def test_dashboard_snapshot_mode_2_customer_response_category(mock_ai):
+    mock_ai.return_value = (
+        {
+            "drivers": [
+                {
+                    "title": "Delivery Experience",
+                    "sentiment_type": "negative",
+                    "description": "Delivery Experience received 11 mentions, of which 10 were negative and 1 was positive, indicating predominantly negative customer sentiment.",
+                    "recommendation": "Investigate key factors contributing to negative sentiment around Delivery Experience."
+                },
+                {
+                    "title": "Billing & Charges",
+                    "sentiment_type": "negative",
+                    "description": "Billing & Charges received 2 mentions, all of which were negative, indicating a consistently negative sentiment for this category.",
+                    "recommendation": "Review the billing and charges experience to improve transparency."
+                }
+            ]
+        },
+        "openai"
+    )
+
+    payload = {
+        "data": [
+            {
+                "l1": None,
+                "l2": None,
+                "segment": "promoter",
+                "customer_responses": {
+                    "category": "Delivery Experience",
+                    "mentions": 11,
+                    "negative": 10,
+                    "positive": 1
+                }
+            },
+            {
+                "l1": None,
+                "l2": None,
+                "segment": "detractor",
+                "customer_responses": {
+                    "category": "Billing & Charges",
+                    "mentions": 2,
+                    "negative": 2,
+                    "positive": 0
+                }
+            }
+        ],
+        "start_date": "2020-01-01",
+        "end_date": "2026-09-30",
+        "client_id": 19,
+        "survey_id": 37,
+        "dashboard_type": "snapshot"
+    }
+
+    response = client.post("/api/dashboard/snapshot", json=payload, headers=VALID_HEADERS)
+    assert response.status_code == 200
+    res_data = response.json()
+    assert res_data["status"] == "ok"
+    assert res_data["dashboard_type"] == "snapshot"
+    assert res_data["category"] == "Overall Experience"
+    drivers = res_data["analysis"]["drivers"]
+    assert len(drivers) == 2
+    assert drivers[0]["title"] == "Delivery Experience"
+    assert drivers[0]["sentiment_type"] == "negative"
+    assert drivers[1]["title"] == "Billing & Charges"
+    assert drivers[1]["sentiment_type"] == "negative"
+
 
 
 

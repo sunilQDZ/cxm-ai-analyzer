@@ -59,6 +59,9 @@ app.include_router(router)
 from api.dashboard import router as dashboard_router
 app.include_router(dashboard_router)
 
+from quadrant.router import router as quadrant_router
+app.include_router(quadrant_router)
+
 
 from config import (
     OLLAMA_MODEL,

@@ -18,7 +18,9 @@ class SnapshotPayload(BaseModel):
     segment: Optional[str] = Field(default="promoter", description="promoter, detractor, or passive")
     l1: Optional[L1OptionItem] = None
     l2: Optional[L2OptionItem] = None
-    customer_responses: Optional[List[str]] = Field(default=None, description="Optional verbatims")
+    customer_responses: Optional[Union[Dict[str, Any], List[Dict[str, Any]], List[str], str]] = Field(
+        default=None, description="Optional customer responses verbatims or category metrics object"
+    )
 
 
 class CategorySentimentDetail(BaseModel):
@@ -208,7 +210,7 @@ class TrendAnalyzeRequest(BaseModel):
 
 class DriverItem(BaseModel):
     title: str
-    sentiment_type: str = Field(description="promoter | detractor | passive")
+    sentiment_type: str = Field(description="promoter | detractor | positive | negative | neutral")
     description: str
     recommendation: str
 

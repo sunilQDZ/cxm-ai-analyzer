@@ -425,7 +425,7 @@ def analyze_dashboard(request: Any) -> Dict[str, Any]:
             "processing_time_ms": round(elapsed * 1000, 2)
         }
 
-    # 6. Normalize Snapshot sentiment_type values ("positive"->"promoter", "negative"->"detractor")
+    # 6. Normalize Snapshot sentiment_type values ("promoter", "detractor", "positive", "negative", "neutral", "passive")
     if db_type == "snapshot" and isinstance(ai_result, dict) and "drivers" in ai_result:
         raw_data = _to_dict(getattr(request, "data", None))
         req_segment = (raw_data.get("segment") or "promoter").strip().lower()
@@ -433,14 +433,22 @@ def analyze_dashboard(request: Any) -> Dict[str, Any]:
         for driver in ai_result.get("drivers", []):
             if isinstance(driver, dict):
                 st = (driver.get("sentiment_type") or "").strip().lower()
-                if st in ("positive", "promoters", "promoter"):
+                if st in ("promoter", "promoters"):
                     driver["sentiment_type"] = "promoter"
-                elif st in ("negative", "detractors", "detractor"):
+                elif st in ("detractor", "detractors"):
                     driver["sentiment_type"] = "detractor"
                 elif st in ("passive", "passives"):
                     driver["sentiment_type"] = "passive"
+                elif st in ("positive", "positives"):
+                    driver["sentiment_type"] = "positive"
+                elif st in ("negative", "negatives"):
+                    driver["sentiment_type"] = "negative"
+                elif st in ("neutral", "neutrals"):
+                    driver["sentiment_type"] = "neutral"
+                elif st:
+                    driver["sentiment_type"] = st
                 else:
-                    driver["sentiment_type"] = req_segment if req_segment in ("promoter", "detractor", "passive") else "promoter"
+                    driver["sentiment_type"] = req_segment if req_segment in ("promoter", "detractor", "passive", "positive", "negative", "neutral") else "promoter"
 
     # 7. Normalize Sentiment & Trend Analysis key_insights and key_alerts into structured {title, description} dicts
     if db_type in ("sentiment_analysis", "trend_analysis") and isinstance(ai_result, dict):

@@ -5,11 +5,18 @@ from models.question import Question
 
 
 def get_nps_score(db: Session, survey_id: int, response_id: int):
-    resp_table = f"survey_response_nr_{survey_id}"
-
     inspector = inspect(db.bind)
+    resp_table = None
+    for candidate in (
+        f"survey_response_nr_{survey_id}",
+        f"survey_responses_nr_{survey_id}",
+        f"survey_responses_{survey_id}",
+    ):
+        if inspector.has_table(candidate):
+            resp_table = candidate
+            break
 
-    if not inspector.has_table(resp_table):
+    if not resp_table:
         return None
 
     survey_response = (

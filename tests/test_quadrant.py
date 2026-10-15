@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from app import app
+from config import API_TOKEN
 from quadrant.schema import QuadrantRequest
 from quadrant.service import (
     get_strength,
@@ -10,11 +11,14 @@ from quadrant.service import (
     resolve_date_range,
     calculate_category_correlation,
     build_response_category_matrix,
+    calculate_driver_quadrant,
     get_quadrant_data,
 )
 from utils.helpers import normalize_nps_score
 
 client = TestClient(app)
+VALID_HEADERS = {"x-api-key": API_TOKEN}
+INVALID_HEADERS = {"x-api-key": "invalid-token-123"}
 
 
 def test_quadrant_schema_validation():
@@ -28,6 +32,11 @@ def test_quadrant_schema_validation():
     req_reversed = QuadrantRequest(client_id=1, survey_id=10, start_date=date(2026, 5, 1), end_date=date(2026, 1, 1))
     assert req_reversed.start_date == date(2026, 1, 1)
     assert req_reversed.end_date == date(2026, 5, 1)
+
+    # Segment defaults and choices
+    assert req.segment == "theme_quadrant"
+    req_driver = QuadrantRequest(client_id=1, survey_id=10, segment="driver_quadrant")
+    assert req_driver.segment == "driver_quadrant"
 
 
 def test_normalize_nps_score():
@@ -86,6 +95,24 @@ def test_calculate_category_correlation():
     assert res["Pricing"]["correlation"] < 0
 
 
+def test_quadrant_unauthorized():
+    payload = {
+        "client_id": 1,
+        "survey_id": 10,
+        "start_date": "2026-01-01",
+        "end_date": "2026-01-31"
+    }
+    # No header
+    res1 = client.post("/api/quadrant", json=payload)
+    assert res1.status_code == 401
+    assert res1.json()["detail"] == "Unauthorized API Token"
+
+    # Invalid header
+    res2 = client.post("/api/quadrant", json=payload, headers=INVALID_HEADERS)
+    assert res2.status_code == 401
+    assert res2.json()["detail"] == "Unauthorized API Token"
+
+
 @patch("quadrant.router.get_quadrant_data")
 def test_quadrant_endpoint_survey_not_found(mock_get_data):
     mock_get_data.return_value = None
@@ -96,11 +123,11 @@ def test_quadrant_endpoint_survey_not_found(mock_get_data):
         "start_date": "2026-01-01",
         "end_date": "2026-01-31"
     }
-    response = client.post("/api/quadrant", json=payload)
+    response = client.post("/api/quadrant", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 404
     data = response.json()
     assert data["success"] is False
-    assert data["message"] == "Survey not found"
+    assert data["message"] == "Quadrant analysis data not found"
 
 
 @patch("quadrant.router.get_quadrant_data")
@@ -108,6 +135,7 @@ def test_quadrant_endpoint_success(mock_get_data):
     mock_get_data.return_value = {
         "survey_id": 10,
         "client_id": 1,
+        "segment": "theme_quadrant",
         "start_date": "2026-01-01",
         "end_date": "2026-01-31",
         "nps_data": {
@@ -140,7 +168,7 @@ def test_quadrant_endpoint_success(mock_get_data):
         "end_date": "2026-01-31"
     }
     # Test POST /api/quadrant
-    response = client.post("/api/quadrant", json=payload)
+    response = client.post("/api/quadrant", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
@@ -148,5 +176,108 @@ def test_quadrant_endpoint_success(mock_get_data):
     assert "Delivery" in data["data"]["quadrant_data"]
 
     # Ensure POST /quadrant without prefix returns 404
-    response_no_prefix = client.post("/quadrant", json=payload)
+    response_no_prefix = client.post("/quadrant", json=payload, headers=VALID_HEADERS)
     assert response_no_prefix.status_code == 404
+
+
+@patch("quadrant.router.get_quadrant_data")
+def test_quadrant_endpoint_driver_segment(mock_get_data):
+    mock_get_data.return_value = {
+        "analysis_type": "rating_vs_nps",
+        "survey_id": 10,
+        "client_id": 1,
+        "segment": "driver_quadrant",
+        "start_date": None,
+        "end_date": None,
+        "nps_data": {
+            "total_responses": 50,
+            "promoters": 30,
+            "passives": 15,
+            "detractors": 5,
+            "nps": 50.0
+        },
+        "average_performance": 4.2,
+        "average_impact": 0.48,
+        "quadrant_data": {},
+        "quadrant_table": []
+    }
+
+    payload = {
+        "client_id": 1,
+        "survey_id": 10,
+        "segment": "driver_quadrant"
+    }
+    response = client.post("/api/quadrant", json=payload, headers=VALID_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["data"]["segment"] == "driver_quadrant"
+    mock_get_data.assert_called_with(
+        db=mock_get_data.call_args.kwargs["db"],
+        survey_id=10,
+        client_id=1,
+        start_date=None,
+        end_date=None,
+        month=None,
+        year=None,
+        segment="driver_quadrant"
+    )
+
+
+def test_calculate_driver_quadrant():
+    mock_db = MagicMock()
+    mock_inspector = MagicMock()
+    mock_db.bind = MagicMock()
+
+    with patch("quadrant.service.inspect", return_value=mock_inspector), \
+         patch("quadrant.service.get_nps_question") as mock_nps_q:
+
+        mock_inspector.has_table.return_value = True
+        mock_inspector.get_columns.return_value = [
+            {"name": "id"},
+            {"name": "nps_col"},
+            {"name": "driver_csat"},
+            {"name": "response_date"},
+        ]
+
+        mock_nps = MagicMock()
+        mock_nps.slug = "nps_col"
+        mock_nps_q.return_value = mock_nps
+
+        driver_q = MagicMock()
+        driver_q.id = 101
+        driver_q.slug = "driver_csat"
+        driver_q.type = "csat"
+        driver_q.scale = "1-5"
+        driver_q.question = "How satisfied are you?"
+
+        # Mock database rows: (5, 10), (4, 9), (2, 4), (1, 2)
+        mock_rows = [
+            {"id": 1, "nps_col": 10, "driver_csat": 5, "response_date": date(2026, 1, 1)},
+            {"id": 2, "nps_col": 9, "driver_csat": 4, "response_date": date(2026, 1, 2)},
+            {"id": 3, "nps_col": 4, "driver_csat": 2, "response_date": date(2026, 1, 3)},
+            {"id": 4, "nps_col": 2, "driver_csat": 1, "response_date": date(2026, 1, 4)},
+        ]
+        mock_execute = MagicMock()
+        mock_execute.mappings.return_value.all.return_value = mock_rows
+        mock_db.execute.return_value = mock_execute
+
+        result = calculate_driver_quadrant(
+            db=mock_db,
+            survey_id=1,
+            driver_questions=[driver_q],
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 1, 31),
+        )
+
+        assert result is not None
+        assert result["analysis_type"] == "rating_vs_nps"
+        assert result["survey_id"] == 1
+        assert "driver_csat" in result["quadrant_data"]
+        quadrant_info = result["quadrant_data"]["driver_csat"]
+        assert quadrant_info["responses"] == 4
+        assert quadrant_info["correlation"] > 0
+        assert quadrant_info["avg_performance"] == 3.0
+        assert result["nps_data"]["total_responses"] == 4
+        assert result["nps_data"]["promoters"] == 2
+        assert result["nps_data"]["detractors"] == 2

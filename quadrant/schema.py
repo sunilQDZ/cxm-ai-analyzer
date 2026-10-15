@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 class QuadrantRequest(BaseModel):
     client_id: int
     survey_id: int
+    segment: Literal["theme_quadrant", "driver_quadrant"] = "theme_quadrant"
 
     # Priority 1: date range
     start_date: Optional[date] = None

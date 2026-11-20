@@ -291,8 +291,10 @@ def fix_category_subcategory_from_db(
                     matched_cat, matched_sub = fixed_category, best_sub
 
     # If a category was matched from LLM output, verify if it is genuinely relevant to the comment
+    # For non-English comments (e.g. Arabic, Indic script), skip English keyword token overlap check
+    is_non_latin = bool(re.search(r'[\u0600-\u06FF\u0900-\u0DFF]', comment))
     if matched_cat and matched_sub and matched_cat != "Generic":
-        if is_category_relevant_to_comment(comment, matched_cat, matched_sub, category_mapping):
+        if is_non_latin or is_category_relevant_to_comment(comment, matched_cat, matched_sub, category_mapping):
             return matched_cat, matched_sub
         matched_cat = None
         matched_sub = None

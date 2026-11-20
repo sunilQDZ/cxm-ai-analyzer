@@ -235,11 +235,19 @@ def parse_llm_json(raw_text: str) -> Optional[Dict]:
 def call_ollama_llm(
     comment: str,
     category_mapping: Dict[str, list],
-    max_retries: int = 2
+    max_retries: int = 2,
+    language: str = "en"
 ) -> Optional[Dict]:
     """
     Calls Ollama Qwen model with formatted prompt and retry handling.
+    Supports language switching ('en' default, 'ar' for Arabic) while keeping English 100% untouched.
     """
+    if language and str(language).lower() in ["ar", "arabic"]:
+        from services.arabic_service import build_llm_prompt_ar
+        prompt_text = build_llm_prompt_ar(comment, category_mapping)
+    else:
+        prompt_text = build_llm_prompt(comment, category_mapping)
+
     for attempt in range(max_retries):
         try:
             if not check_ollama_status():
@@ -247,7 +255,7 @@ def call_ollama_llm(
 
             payload = {
                 "model": OLLAMA_MODEL,
-                "prompt": build_llm_prompt(comment, category_mapping),
+                "prompt": prompt_text,
                 "format": "json",
                 "stream": False,
                 "keep_alive": OLLAMA_KEEP_ALIVE,

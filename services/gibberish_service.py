@@ -17,9 +17,9 @@ def is_gibrish_comment(text, category_mapping: Optional[Dict[str, List[str]]] = 
     if not cleaned:
         return 1
 
-    # 1. Check for Non-ASCII / Indic Scripts (Devanagari, Tamil, Telugu, Bengali, Gujarati, etc.)
-    # Indic unicode ranges: \u0900-\u0DFF
-    if re.search(r'[\u0900-\u0DFF]', cleaned):
+    # 1. Check for Non-ASCII / Indic Scripts & Arabic Script
+    # Indic unicode ranges: \u0900-\u0DFF, Arabic unicode ranges: \u0600-\u06FF, \u0750-\u077F, \u08A0-\u08FF
+    if re.search(r'[\u0900-\u0DFF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]', cleaned):
         non_ascii_clean = re.sub(r'[^\w\s]', '', cleaned).strip()
         if len(non_ascii_clean) >= 2:
             return 0

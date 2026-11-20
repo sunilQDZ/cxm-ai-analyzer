@@ -26,7 +26,8 @@ def generate_insight(
     comment_id: Any,
     client_id: Optional[Any] = None,
     survey_id: Optional[Any] = None,
-    category_mapping: Optional[Dict[str, List[str]]] = None
+    category_mapping: Optional[Dict[str, List[str]]] = None,
+    language: str = "en"
 ) -> Dict:
     """
     Main orchestration function for single VOC comment insight generation.
@@ -36,7 +37,6 @@ def generate_insight(
     safe_comment_id = str(comment_id) if comment_id is not None else "0"
     safe_comment = str(comment) if comment is not None else ""
 
-    print(f"[VOC STARTED] ID: {safe_comment_id} | Client: {client_id} | Survey: {survey_id}")
     logger.info(f"[VOC STARTED] ID: {safe_comment_id} | Client: {client_id} | Survey: {survey_id}")
 
     db_ok = True
@@ -45,7 +45,6 @@ def generate_insight(
 
     if not db_ok:
         elapsed = time.time() - start
-        print(f"[VOC COMPLETED - DB UNREACHABLE] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
         logger.error(f"[VOC COMPLETED - DB UNREACHABLE] ID: {safe_comment_id} | Client: {client_id} | Survey: {survey_id}")
         return {
             "id": safe_comment_id,
@@ -67,7 +66,6 @@ def generate_insight(
     # 1. Fast-path Gibberish bypass (0.00s latency)
     if is_gibrish == 1:
         elapsed = time.time() - start
-        print(f"[VOC COMPLETED - GIBBERISH] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
         logger.info(f"[VOC COMPLETED - GIBBERISH] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
         return {
             "id": safe_comment_id,
@@ -88,7 +86,6 @@ def generate_insight(
     normalized = normalize_comment(safe_comment)
     if not normalized:
         elapsed = time.time() - start
-        print(f"✔ [VOC COMPLETED - INVALID] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
         logger.info(f"✔ [VOC COMPLETED - INVALID] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
         return {
             "id": safe_comment_id,
@@ -106,7 +103,7 @@ def generate_insight(
         }
 
     # 3. LLM Inference
-    llm_result = call_ollama_llm(comment=normalized, category_mapping=category_mapping)
+    llm_result = call_ollama_llm(comment=normalized, category_mapping=category_mapping, language=language)
 
     if not llm_result:
         elapsed = time.time() - start
@@ -119,7 +116,6 @@ def generate_insight(
             comment=normalized
         )
 
-        print(f"[VOC COMPLETED - LLM OFFLINE FALLBACK] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
         logger.info(f"[VOC COMPLETED - LLM OFFLINE FALLBACK] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
 
         return {
@@ -154,42 +150,55 @@ def generate_insight(
         comment=normalized
     )
 
-    # 7. Priority, Sentiment & Positive Feedback Processing
-    sentiment, emotion, priority, observation, recommendations = fix_sentiment_priority_text(
-        comment=normalized,
-        sentiment=sentiment,
-        emotion=emotion,
-        priority=priority,
-        observation=observation,
-        recommendations=recommendations
-    )
+    is_arabic = bool(language and str(language).lower() in ["ar", "arabic"])
 
-    category, sub_category, sentiment, emotion, priority, observation, recommendations = handle_positive_feedback(
-        comment=normalized,
-        category=category,
-        sub_category=sub_category,
-        sentiment=sentiment,
-        emotion=emotion,
-        priority=priority,
-        observation=observation,
-        recommendations=recommendations
-    )
+    if is_arabic:
+        from services.arabic_service import fix_sentiment_priority_arabic, extract_arabic_keywords
+        sentiment, emotion, priority, observation, recommendations = fix_sentiment_priority_arabic(
+            comment=normalized,
+            sentiment=sentiment,
+            emotion=emotion,
+            priority=priority,
+            observation=observation,
+            recommendations=recommendations
+        )
+        keywords = extract_arabic_keywords(normalized)
+    else:
+        # 7. Priority, Sentiment & Positive Feedback Processing
+        sentiment, emotion, priority, observation, recommendations = fix_sentiment_priority_text(
+            comment=normalized,
+            sentiment=sentiment,
+            emotion=emotion,
+            priority=priority,
+            observation=observation,
+            recommendations=recommendations
+        )
 
-    # 7c. Enforce out-of-domain message when category is Generic
-    observation, recommendations = handle_out_of_domain_generic(
-        comment=normalized,
-        category=category,
-        sub_category=sub_category,
-        observation=observation,
-        recommendations=recommendations
-    )
+        category, sub_category, sentiment, emotion, priority, observation, recommendations = handle_positive_feedback(
+            comment=normalized,
+            category=category,
+            sub_category=sub_category,
+            sentiment=sentiment,
+            emotion=emotion,
+            priority=priority,
+            observation=observation,
+            recommendations=recommendations
+        )
 
-    # 8. Meaningful Keyword Extraction
-    keywords = extract_keywords(normalized, category, sub_category)
+        # 7c. Enforce out-of-domain message when category is Generic
+        observation, recommendations = handle_out_of_domain_generic(
+            comment=normalized,
+            category=category,
+            sub_category=sub_category,
+            observation=observation,
+            recommendations=recommendations
+        )
+
+        # 8. Meaningful Keyword Extraction
+        keywords = extract_keywords(normalized, category, sub_category)
 
     elapsed = time.time() - start
 
-    print(f"[VOC COMPLETED] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
     logger.info(f"[VOC COMPLETED] ID: {safe_comment_id} | Time: {elapsed:.2f}s")
 
     return {
@@ -208,15 +217,15 @@ def generate_insight(
     }
 
 
-def process_comments_batch(comments_list: List[Tuple[Any, Any, Optional[Any], Optional[Any]]]) -> List[Dict]:
+def process_comments_batch(
+    comments_list: List[Tuple[Any, Any, Optional[Any], Optional[Any]]],
+    language: str = "en"
+) -> List[Dict]:
     """
     Batch processing coordinator for VOC comments array. Each element is (comment, comment_id, client_id, survey_id).
     """
     total_items = len(comments_list)
-    print(f"\n================================================================================")
-    print(f"[BATCH STARTED] Processing {total_items} VOC item(s)...")
-    print(f"================================================================================\n")
-    logger.info(f"[BATCH STARTED] Processing {total_items} VOC item(s)...")
+    logger.info(f"[BATCH STARTED] Processing {total_items} VOC item(s) in language='{language}'...")
 
     if BATCH_MAX_WORKERS <= 1 or len(comments_list) <= 1:
         results = []
@@ -226,7 +235,7 @@ def process_comments_batch(comments_list: List[Tuple[Any, Any, Optional[Any], Op
             cid = item[2] if len(item) > 2 else None
             sid = item[3] if len(item) > 3 else None
             try:
-                results.append(generate_insight(comment, comment_id, client_id=cid, survey_id=sid))
+                results.append(generate_insight(comment, comment_id, client_id=cid, survey_id=sid, language=language))
             except Exception as e:
                 logger.error(f"Error processing {comment_id}: {str(e)[:80]}")
                 results.append({
@@ -254,7 +263,7 @@ def process_comments_batch(comments_list: List[Tuple[Any, Any, Optional[Any], Op
             comment_id = str(item[1]) if item[1] is not None else "0"
             cid = item[2] if len(item) > 2 else None
             sid = item[3] if len(item) > 3 else None
-            fut = executor.submit(generate_insight, comment, comment_id, client_id=cid, survey_id=sid)
+            fut = executor.submit(generate_insight, comment, comment_id, client_id=cid, survey_id=sid, language=language)
             future_map[fut] = index
 
         for future in as_completed(future_map):

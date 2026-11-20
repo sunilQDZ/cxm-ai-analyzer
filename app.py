@@ -39,8 +39,13 @@ app = FastAPI(
 async def global_exception_handler(request: Request, exc: Exception):
     """
     Catches any unhandled exceptions, logs the full traceback to app.log, and returns a clean 500 error.
+    Gracefully handles BrokenPipeError / ClientDisconnect when clients close connections early.
     """
     logger = logging.getLogger("cx_api")
+    if isinstance(exc, (BrokenPipeError, ConnectionResetError)) or "Broken pipe" in str(exc):
+        logger.warning("Client disconnected early on %s %s: %s", request.method, request.url.path, str(exc))
+        return JSONResponse(status_code=499, content={"status": "error", "detail": "Client closed connection early"})
+
     error_trace = traceback.format_exc()
     logger.error("Unhandled Exception on %s %s: %s\n%s", request.method, request.url.path, str(exc), error_trace)
     return JSONResponse(

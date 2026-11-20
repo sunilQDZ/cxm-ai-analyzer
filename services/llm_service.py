@@ -73,14 +73,18 @@ def warm_up_ollama():
 
 def startup_logic():
     """
-    Initializes global HTTP session, checks Ollama health, and pre-warms the model.
+    Initializes global HTTP session, checks Ollama health, and pre-warms the model asynchronously.
+    Warmup runs in a background thread so the server process starts instantly without triggering
+    cPanel / Phusion Passenger / Gunicorn startup timeouts.
     """
+    import threading
     global ollama_session, OLLAMA_AVAILABLE
     ollama_session = build_http_session()
     OLLAMA_AVAILABLE = check_ollama_status(force_check=True)
     if OLLAMA_AVAILABLE:
-        logger.info("[OK] Ollama available - starting pre-warm")
-        warm_up_ollama()
+        logger.info("[OK] Ollama available - starting background pre-warm")
+        warmup_thread = threading.Thread(target=warm_up_ollama, daemon=True, name="OllamaWarmupThread")
+        warmup_thread.start()
     else:
         logger.warning("[WARN] Ollama unavailable")
 

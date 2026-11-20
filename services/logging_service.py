@@ -1,7 +1,8 @@
 import os
+import sys
 import logging
-from logging.handlers import RotatingFileHandler
 from typing import Dict, List, Optional
+from loguru import logger
 
 # Create logs directory
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -13,37 +14,71 @@ LOG_FILE_PATH = os.path.join(LOGS_DIR, "app.log")
 _is_logging_setup = False
 
 
+class InterceptHandler(logging.Handler):
+    """
+    Intercept standard Python logging calls (from uvicorn, fastapi, etc.) and route them to loguru.
+    """
+    def emit(self, record):
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
 def setup_file_logging() -> None:
     """
-    Configures rotating file handler for application logs with UTF-8 encoding.
+    Configures loguru sink with file rotation, retention, and thread safety.
+    Intercepts standard library logging so all existing logger.info() calls throughout the app
+    seamlessly write to the loguru log file.
     """
     global _is_logging_setup
     if _is_logging_setup:
         return
 
-    logger = logging.getLogger("cx_api")
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
+    # Clear default console sink to prevent duplicate output, then re-add with nice format
+    logger.remove()
 
-    # Rotating file handler (10 MB per file, max 5 backup files)
-    file_handler = RotatingFileHandler(
+    log_format = "[{time:YYYY-MM-DD HH:mm:ss}] [{level}] [{name}] {message}"
+
+    # 1. Console Output
+    logger.add(
+        sys.stderr,
+        format=log_format,
+        level="INFO",
+        colorize=True
+    )
+
+    # 2. Rotating File Sink (10 MB per file, max 5 backup files, thread-safe enqueue=True)
+    logger.add(
         LOG_FILE_PATH,
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5,
-        encoding="utf-8"
+        format=log_format,
+        level="INFO",
+        rotation="10 MB",
+        retention=5,
+        encoding="utf-8",
+        enqueue=True,  # thread-safe, process-safe async logging
+        backtrace=True,
+        diagnose=True
     )
-    formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    file_handler.setFormatter(formatter)
+
+    # 3. Intercept standard library logging ('cx_api', 'uvicorn', etc.)
+    logging.basicConfig(handlers=[InterceptHandler()], level=logging.INFO, force=True)
     
-    # Avoid duplicate handlers if called multiple times
-    if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
-        logger.addHandler(file_handler)
+    # Direct standard cx_api logger through the interceptor
+    std_logger = logging.getLogger("cx_api")
+    std_logger.handlers = [InterceptHandler()]
+    std_logger.setLevel(logging.INFO)
+    std_logger.propagate = False
 
     _is_logging_setup = True
-    logger.info("File logging initialized at: %s", LOG_FILE_PATH)
+    logger.info(f"Loguru file logging initialized at: {LOG_FILE_PATH}")
 
 
 def get_log_lines(limit: int = 100, level: Optional[str] = None) -> Dict:
@@ -74,7 +109,6 @@ def get_log_lines(limit: int = 100, level: Optional[str] = None) -> Dict:
         warning_lines = [l for l in all_lines if "[WARNING]" in l]
         info_lines = [l for l in all_lines if "[INFO]" in l]
 
-        # Filter by specific level if requested
         if level:
             level_tag = f"[{level.upper()}]"
             filtered = [l for l in all_lines if level_tag in l]
@@ -107,7 +141,6 @@ def clear_log_file() -> Dict:
     """
     Clears / truncates the app.log file.
     """
-    logger = logging.getLogger("cx_api")
     try:
         if os.path.exists(LOG_FILE_PATH):
             with open(LOG_FILE_PATH, "w", encoding="utf-8") as f:

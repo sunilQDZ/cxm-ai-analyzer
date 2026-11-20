@@ -112,13 +112,16 @@ def generate(
 
 @router.get("/logs", tags=["Logs"])
 def get_logs(
+    limit: int = 100,
+    level: Optional[str] = None,
     x_api_key: Optional[str] = Header(default=None)
 ):
     """
     Retrieves application log lines with metadata and statistics.
+    Supports optional 'limit' (default 100) and 'level' (e.g. 'ERROR', 'INFO', 'WARNING') query parameters.
     """
     require_api_key(x_api_key)
-    return get_log_lines()
+    return get_log_lines(limit=limit, level=level)
 
 
 @router.delete("/logs", tags=["Logs"])

@@ -66,7 +66,8 @@ def generate(
     """
     Main VOC analysis endpoint: categorizes feedback, detects gibberish, extracts keywords,
     and analyzes sentiment, emotion, priority, observations, and recommendations.
-    Supports concurrent multi-item processing and client_id / survey_id filtered category loading.
+    Returns dual output: 'english' array and 'native' array.
+    Supports concurrent multi-item processing, optional 'language' field, and client_id / survey_id filtered category loading.
     """
     api_start = time.time()
     require_api_key(x_api_key)
@@ -78,17 +79,22 @@ def generate(
             detail="data list must not be empty."
         )
 
-    logger.info("Processing /generate request with %d VOC items", len(request.data))
+    req_language = request.language.strip() if request.language and request.language.strip() else None
+
+    logger.info("Processing /generate request with %d VOC items | Language: %s", len(request.data), req_language)
 
     if len(request.data) == 1:
         single = request.data[0]
-        insight = generate_insight(
+        dual_insight = generate_insight(
             comment=single.comments or "",
             comment_id=str(single.id) if single.id is not None else "0",
             client_id=single.client_id,
-            survey_id=single.survey_id
+            survey_id=single.survey_id,
+            language=req_language,
+            return_dual=True
         )
-        results = [InsightPredictionItem(**insight)]
+        english_results = [InsightPredictionItem(**dual_insight["english"])]
+        native_results = [InsightPredictionItem(**dual_insight["native"])]
     else:
         batch_tuples = [
             (
@@ -99,13 +105,15 @@ def generate(
             )
             for item in request.data
         ]
-        raw_insights = process_batch_insights(batch_tuples)
-        results = [InsightPredictionItem(**res) for res in raw_insights]
+        dual_insights = process_batch_insights(batch_tuples, language=req_language, return_dual=True)
+        english_results = [InsightPredictionItem(**res) for res in dual_insights["english"]]
+        native_results = [InsightPredictionItem(**res) for res in dual_insights["native"]]
 
     elapsed = time.time() - api_start
     logger.info("Successfully processed %d comments in %.2fs", len(request.data), elapsed)
 
-    return InsightResponse(data=results)
+    return InsightResponse(english=english_results, native=native_results)
+
 
 
 @router.get("/logs", tags=["Logs"])

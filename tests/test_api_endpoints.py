@@ -43,7 +43,7 @@ def test_generate_empty_payload():
 
 @patch("routes.generate_insight")
 def test_generate_single_comment_success(mock_insight):
-    mock_insight.return_value = {
+    item = {
         "id": "c-101",
         "comments": "The delivery was fast and smooth.",
         "is_gibberish": 0,
@@ -56,8 +56,13 @@ def test_generate_single_comment_success(mock_insight):
         "observation": "Customer expressed satisfaction with fast delivery.",
         "recommendations": "Maintain current logistics speed."
     }
+    mock_insight.return_value = {
+        "english": item,
+        "native": item
+    }
 
     payload = {
+        "language": "en",
         "data": [
             {"id": "c-101", "client_id": 1, "survey_id": 10, "comments": "The delivery was fast and smooth."}
         ]
@@ -65,15 +70,17 @@ def test_generate_single_comment_success(mock_insight):
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert "data" in res_data
-    assert len(res_data["data"]) == 1
-    assert res_data["data"][0]["category"] == "Delivery"
-    assert res_data["data"][0]["sentiment"] == "Positive"
+    assert "english" in res_data
+    assert "native" in res_data
+    assert len(res_data["english"]) == 1
+    assert len(res_data["native"]) == 1
+    assert res_data["english"][0]["category"] == "Delivery"
+    assert res_data["native"][0]["sentiment"] == "Positive"
 
 
 @patch("routes.process_batch_insights")
 def test_generate_batch_comments_success(mock_batch):
-    mock_batch.return_value = [
+    batch_items = [
         {
             "id": "c-101",
             "comments": "Great app",
@@ -101,8 +108,13 @@ def test_generate_batch_comments_success(mock_batch):
             "recommendations": "Check payment gateway."
         }
     ]
+    mock_batch.return_value = {
+        "english": batch_items,
+        "native": batch_items
+    }
 
     payload = {
+        "language": "en",
         "data": [
             {"id": "c-101", "client_id": 1, "survey_id": 10, "comments": "Great app"},
             {"id": "c-102", "client_id": 1, "survey_id": 10, "comments": "Payment failed twice"}
@@ -111,8 +123,12 @@ def test_generate_batch_comments_success(mock_batch):
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert len(res_data["data"]) == 2
-    assert res_data["data"][1]["priority"] == "High"
+    assert "english" in res_data
+    assert "native" in res_data
+    assert len(res_data["english"]) == 2
+    assert len(res_data["native"]) == 2
+    assert res_data["english"][1]["priority"] == "High"
+
 
 
 def test_logs_endpoints():
@@ -255,9 +271,12 @@ def test_generate_edge_case_missing_optional_fields():
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert len(res_data["data"]) == 1
-    assert res_data["data"][0]["id"] == "999"
-    assert res_data["data"][0]["sentiment"] in ["Positive", "Neutral", "Negative"]
+    assert "english" in res_data
+    assert "native" in res_data
+    assert len(res_data["english"]) == 1
+    assert len(res_data["native"]) == 1
+    assert res_data["english"][0]["id"] == "999"
+    assert res_data["english"][0]["sentiment"] in ["Positive", "Neutral", "Negative"]
 
 
 def test_generate_mixed_client_and_survey_ids():
@@ -271,10 +290,13 @@ def test_generate_mixed_client_and_survey_ids():
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert len(res_data["data"]) == 3
-    assert res_data["data"][0]["id"] == "item-1"
-    assert res_data["data"][1]["id"] == "item-2"
-    assert res_data["data"][2]["id"] == "item-3"
+    assert "english" in res_data
+    assert "native" in res_data
+    assert len(res_data["english"]) == 3
+    assert len(res_data["native"]) == 3
+    assert res_data["english"][0]["id"] == "item-1"
+    assert res_data["english"][1]["id"] == "item-2"
+    assert res_data["english"][2]["id"] == "item-3"
 
 
 def test_generate_gibberish_and_valid_mixed_batch():
@@ -287,10 +309,14 @@ def test_generate_gibberish_and_valid_mixed_batch():
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert len(res_data["data"]) == 2
-    assert res_data["data"][0]["is_gibberish"] == 1
-    assert res_data["data"][0]["category"] == "Generic"
-    assert res_data["data"][1]["is_gibberish"] == 0
+    assert "english" in res_data
+    assert "native" in res_data
+    assert len(res_data["english"]) == 2
+    assert len(res_data["native"]) == 2
+    assert res_data["english"][0]["is_gibberish"] == 1
+    assert res_data["english"][0]["category"] == "Generic"
+    assert res_data["english"][1]["is_gibberish"] == 0
+
 
 
 @patch("services.dashboard_analysis.call_ai_completion")

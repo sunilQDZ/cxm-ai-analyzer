@@ -49,50 +49,54 @@ PRIORITY_TRANSLATIONS = {
 }
 
 
-def detect_and_translate_to_english(text: str) -> Tuple[str, str]:
+def detect_and_translate_to_english(text: str, source_lang: Optional[str] = None) -> Tuple[str, str]:
     """
-    Auto-detects the source language of any comment and translates it to English.
-    Returns (english_text, detected_language_code).
-    If comment is already English or pure ASCII, returns original text and 'en'.
+    Auto-detects or accepts explicit source language of any comment and translates it to English.
+    Returns (english_text, detected_or_provided_language_code).
+    If comment is already English or pure ASCII (and source_lang is 'en' or not specified), returns original text and 'en'.
     """
     if not text or not str(text).strip():
-        return "", "en"
+        return "", source_lang.lower() if source_lang else "en"
 
     clean_text = str(text).strip()
+    explicit_lang = source_lang.strip().lower() if source_lang and source_lang.strip() else None
 
-    # Fast-path check: pure English ASCII with no foreign unicode characters
-    # If text is purely ASCII letters, numbers, spaces, and punctuation, it is English/Hinglish
-    if re.fullmatch(r'[\x00-\x7F]+', clean_text):
-        # Even if pure ASCII, check if it's Romanized Spanish/French/etc. or standard English
-        # But for Hinglish and English, analyzing in English works 100% out-of-the-box
+    # If explicitly English
+    if explicit_lang in ["en", "english"]:
         return clean_text, "en"
 
-    cache_key = f"auto->en:{clean_text}"
+    # Fast-path check: pure English ASCII with no foreign unicode characters when no foreign source_lang is specified
+    if not explicit_lang and re.fullmatch(r'[\x00-\x7F]+', clean_text):
+        return clean_text, "en"
+
+    sl_param = explicit_lang if explicit_lang else "auto"
+    cache_key = f"{sl_param}->en:{clean_text}"
     if cache_key in _TRANSLATION_CACHE:
-        return _TRANSLATION_CACHE[cache_key], "cached"
+        return _TRANSLATION_CACHE[cache_key], explicit_lang or "cached"
 
     try:
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q={urllib.parse.quote(clean_text)}"
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={sl_param}&tl=en&dt=t&q={urllib.parse.quote(clean_text)}"
         req = urllib.request.Request(
             url,
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         )
         with urllib.request.urlopen(req, timeout=6) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            detected_lang = data[2] if len(data) > 2 and isinstance(data[2], str) else "auto"
+            detected_lang = explicit_lang if explicit_lang else (data[2] if len(data) > 2 and isinstance(data[2], str) else "auto")
             translated = "".join([part[0] for part in data[0] if part[0]]).strip()
             
             # Cache result
             if len(_TRANSLATION_CACHE) < MAX_CACHE_SIZE:
                 _TRANSLATION_CACHE[cache_key] = translated
 
-            logger.info(f"[TRANSLATE-IN] Detected language='{detected_lang}' | Length={len(clean_text)}")
+            logger.info(f"[TRANSLATE-IN] Lang='{detected_lang}' (explicit={explicit_lang}) | Length={len(clean_text)}")
             return translated, detected_lang.lower()
 
     except Exception as e:
         logger.warning(f"Translation to English failed or timed out: {e}")
         # Graceful fallback: return original text
-        return clean_text, "en"
+        return clean_text, explicit_lang or "en"
+
 
 
 def translate_back_to_original(text: str, target_lang: str) -> str:

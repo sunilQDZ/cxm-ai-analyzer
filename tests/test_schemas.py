@@ -37,13 +37,15 @@ def test_comment_item_schema():
 
 def test_inference_request_schema():
     item = CommentItem(id="c1", client_id=1, survey_id=1, comments="Test comment")
-    req = InferenceRequest(data=[item])
+    req = InferenceRequest(data=[item], language="ar")
     assert len(req.data) == 1
     assert req.data[0].id == "c1"
+    assert req.language == "ar"
 
     # Test empty list allows instantiation
     req_empty = InferenceRequest(data=[])
     assert len(req_empty.data) == 0
+    assert req_empty.language is None
 
 
 def test_insight_prediction_item_schema():
@@ -79,9 +81,12 @@ def test_insight_response_schema():
         observation="Observed issue",
         recommendations="Fix it"
     )
-    res = InsightResponse(data=[prediction])
-    assert len(res.data) == 1
-    assert res.data[0].category == "Product"
+    res = InsightResponse(english=[prediction], native=[prediction])
+    assert len(res.english) == 1
+    assert len(res.native) == 1
+    assert res.english[0].category == "Product"
+    assert res.native[0].sentiment == "Negative"
+
 
 
 def test_dashboard_schemas():

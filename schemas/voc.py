@@ -11,6 +11,7 @@ class CommentItem(BaseModel):
 
 class InferenceRequest(BaseModel):
     data: List[CommentItem]
+    language: Optional[str] = Field(default=None, description="Language code of incoming comments (e.g. 'ar', 'fr', 'es', 'de', 'hi'). If omitted, language is auto-detected.")
 
 
 class InsightPredictionItem(BaseModel):
@@ -28,5 +29,7 @@ class InsightPredictionItem(BaseModel):
 
 
 class InsightResponse(BaseModel):
-    data: List[InsightPredictionItem]
+    english: List[InsightPredictionItem]
+    native: List[InsightPredictionItem]
+
 

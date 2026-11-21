@@ -11,7 +11,6 @@ class CommentItem(BaseModel):
 
 class InferenceRequest(BaseModel):
     data: List[CommentItem]
-    language: Optional[str] = Field(default="en", description="Analysis language: 'en' for English (default), 'ar' for Arabic")
 
 
 class InsightPredictionItem(BaseModel):

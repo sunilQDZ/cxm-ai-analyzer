@@ -78,8 +78,7 @@ def generate(
             detail="data list must not be empty."
         )
 
-    req_language = getattr(request, "language", "en") or "en"
-    logger.info("Processing /generate request with %d VOC items in language='%s'", len(request.data), req_language)
+    logger.info("Processing /generate request with %d VOC items", len(request.data))
 
     if len(request.data) == 1:
         single = request.data[0]
@@ -87,8 +86,7 @@ def generate(
             comment=single.comments or "",
             comment_id=str(single.id) if single.id is not None else "0",
             client_id=single.client_id,
-            survey_id=single.survey_id,
-            language=req_language
+            survey_id=single.survey_id
         )
         results = [InsightPredictionItem(**insight)]
     else:
@@ -101,7 +99,7 @@ def generate(
             )
             for item in request.data
         ]
-        raw_insights = process_batch_insights(batch_tuples, language=req_language)
+        raw_insights = process_batch_insights(batch_tuples)
         results = [InsightPredictionItem(**res) for res in raw_insights]
 
     elapsed = time.time() - api_start

@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -7,11 +7,11 @@ class CommentItem(BaseModel):
     client_id: Optional[int] = None
     survey_id: Optional[int] = None
     comments: Optional[str] = ""
+    language: Optional[str] = Field(default=None, description="Optional language code (e.g. 'ar', 'fr', 'es', 'de', 'hi'). If omitted, auto-detected.")
 
 
 class InferenceRequest(BaseModel):
     data: List[CommentItem]
-    language: Optional[str] = Field(default=None, description="Language code of incoming comments (e.g. 'ar', 'fr', 'es', 'de', 'hi'). If omitted, language is auto-detected.")
 
 
 class InsightPredictionItem(BaseModel):
@@ -29,7 +29,7 @@ class InsightPredictionItem(BaseModel):
 
 
 class InsightResponse(BaseModel):
-    english: List[InsightPredictionItem]
-    native: List[InsightPredictionItem]
+    data: List[Dict[str, InsightPredictionItem]]
+
 
 

@@ -12,8 +12,8 @@ This document provides a comprehensive record of all optimization techniques and
 | [`services/llm_service.py`](file:///d:/SUNIL%20KUMAWAT/Live_Projects/cxm-ai-analyzer%20project/services/llm_service.py) | 1. Restructured `build_llm_prompt` to place static instructions first and dynamic comment last.<br>2. Updated payload to send `keep_alive` & model generation options (`num_thread`, `num_ctx`, `num_predict`).<br>3. Set `read=0` on HTTP session retries. | 1. **Enables 100% Ollama KV Prefix Prompt Caching** (eval time drops from ~1.5s to <0.05s).<br>2. Forces Ollama C++ llama.cpp backend to strictly respect CPU thread limit.<br>3. Fixes double-retry timeout multiplication ($2 \times 2 = 4$ retries). |
 | [`routes.py`](file:///d:/SUNIL%20KUMAWAT/Live_Projects/cxm-ai-analyzer%20project/routes.py) | Updated `/health` endpoint to return active CPU parameters (`ollama_threads`, `batch_max_workers`, `ollama_keep_alive`) | Enables real-time verification of active CPU optimization settings via health checks on production servers. |
 | [`app.py`](file:///d:/SUNIL%20KUMAWAT/Live_Projects/cxm-ai-analyzer%20project/app.py) | Updated console startup logs to print thread count, max workers, and keep-alive duration | Provides immediate visibility into CPU limits when starting Uvicorn server. |
-| [`db_cat_1.py`](file:///d:/SUNIL%20KUMAWAT/Live_Projects/cxm-ai-analyzer%20project/db_cat_1.py) | Updated compatibility bridge imports & exports | Maintains full backward compatibility for legacy imports accessing config parameters. |
 | [`deployment_guide.md`](file:///d:/SUNIL%20KUMAWAT/Live_Projects/cxm-ai-analyzer%20project/deployment_guide.md) | Added systemd environment variables (`OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MAX_LOADED_MODELS=1`) | Prevents Ollama service from spawning parallel CPU runners or loading multiple models. |
+
 
 ---
 

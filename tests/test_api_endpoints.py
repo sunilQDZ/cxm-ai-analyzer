@@ -57,77 +57,73 @@ def test_generate_single_comment_success(mock_insight):
         "recommendations": "Maintain current logistics speed."
     }
     mock_insight.return_value = {
-        "english": item,
-        "native": item
+        "english": item
     }
 
     payload = {
-        "language": "en",
         "data": [
-            {"id": "c-101", "client_id": 1, "survey_id": 10, "comments": "The delivery was fast and smooth."}
+            {"id": "c-101", "client_id": 1, "survey_id": 10, "comments": "The delivery was fast and smooth.", "language": "en"}
         ]
     }
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert "english" in res_data
-    assert "native" in res_data
-    assert len(res_data["english"]) == 1
-    assert len(res_data["native"]) == 1
-    assert res_data["english"][0]["category"] == "Delivery"
-    assert res_data["native"][0]["sentiment"] == "Positive"
+    assert "data" in res_data
+    assert len(res_data["data"]) == 1
+    assert "english" in res_data["data"][0]
+    assert res_data["data"][0]["english"]["category"] == "Delivery"
+    assert res_data["data"][0]["english"]["sentiment"] == "Positive"
 
 
 @patch("routes.process_batch_insights")
 def test_generate_batch_comments_success(mock_batch):
     batch_items = [
         {
-            "id": "c-101",
-            "comments": "Great app",
-            "is_gibberish": 0,
-            "category": "App Experience",
-            "sub_category": "UI",
-            "sentiment": "Positive",
-            "emotion": "Delighted",
-            "priority": "Low",
-            "keywords": "great, app",
-            "observation": "User liked the app.",
-            "recommendations": "Keep UI clean."
+            "english": {
+                "id": "c-101",
+                "comments": "Great app",
+                "is_gibberish": 0,
+                "category": "App Experience",
+                "sub_category": "UI",
+                "sentiment": "Positive",
+                "emotion": "Delighted",
+                "priority": "Low",
+                "keywords": "great, app",
+                "observation": "User liked the app.",
+                "recommendations": "Keep UI clean."
+            }
         },
         {
-            "id": "c-102",
-            "comments": "Payment failed twice",
-            "is_gibberish": 0,
-            "category": "Billing",
-            "sub_category": "Payment Gateway",
-            "sentiment": "Negative",
-            "emotion": "Frustrated",
-            "priority": "High",
-            "keywords": "payment, failed",
-            "observation": "Payment processing error.",
-            "recommendations": "Check payment gateway."
+            "english": {
+                "id": "c-102",
+                "comments": "Payment failed twice",
+                "is_gibberish": 0,
+                "category": "Billing",
+                "sub_category": "Payment Gateway",
+                "sentiment": "Negative",
+                "emotion": "Frustrated",
+                "priority": "High",
+                "keywords": "payment, failed",
+                "observation": "Payment processing error.",
+                "recommendations": "Check payment gateway."
+            }
         }
     ]
-    mock_batch.return_value = {
-        "english": batch_items,
-        "native": batch_items
-    }
+    mock_batch.return_value = batch_items
 
     payload = {
-        "language": "en",
         "data": [
-            {"id": "c-101", "client_id": 1, "survey_id": 10, "comments": "Great app"},
-            {"id": "c-102", "client_id": 1, "survey_id": 10, "comments": "Payment failed twice"}
+            {"id": "c-101", "client_id": 1, "survey_id": 10, "comments": "Great app", "language": "en"},
+            {"id": "c-102", "client_id": 1, "survey_id": 10, "comments": "Payment failed twice", "language": "en"}
         ]
     }
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert "english" in res_data
-    assert "native" in res_data
-    assert len(res_data["english"]) == 2
-    assert len(res_data["native"]) == 2
-    assert res_data["english"][1]["priority"] == "High"
+    assert "data" in res_data
+    assert len(res_data["data"]) == 2
+    assert res_data["data"][1]["english"]["priority"] == "High"
+
 
 
 
@@ -271,12 +267,11 @@ def test_generate_edge_case_missing_optional_fields():
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert "english" in res_data
-    assert "native" in res_data
-    assert len(res_data["english"]) == 1
-    assert len(res_data["native"]) == 1
-    assert res_data["english"][0]["id"] == "999"
-    assert res_data["english"][0]["sentiment"] in ["Positive", "Neutral", "Negative"]
+    assert "data" in res_data
+    assert len(res_data["data"]) == 1
+    assert "english" in res_data["data"][0]
+    assert res_data["data"][0]["english"]["id"] == "999"
+    assert res_data["data"][0]["english"]["sentiment"] in ["Positive", "Neutral", "Negative"]
 
 
 def test_generate_mixed_client_and_survey_ids():
@@ -290,13 +285,11 @@ def test_generate_mixed_client_and_survey_ids():
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert "english" in res_data
-    assert "native" in res_data
-    assert len(res_data["english"]) == 3
-    assert len(res_data["native"]) == 3
-    assert res_data["english"][0]["id"] == "item-1"
-    assert res_data["english"][1]["id"] == "item-2"
-    assert res_data["english"][2]["id"] == "item-3"
+    assert "data" in res_data
+    assert len(res_data["data"]) == 3
+    assert res_data["data"][0]["english"]["id"] == "item-1"
+    assert res_data["data"][1]["english"]["id"] == "item-2"
+    assert res_data["data"][2]["english"]["id"] == "item-3"
 
 
 def test_generate_gibberish_and_valid_mixed_batch():
@@ -309,13 +302,12 @@ def test_generate_gibberish_and_valid_mixed_batch():
     response = client.post("/generate", json=payload, headers=VALID_HEADERS)
     assert response.status_code == 200
     res_data = response.json()
-    assert "english" in res_data
-    assert "native" in res_data
-    assert len(res_data["english"]) == 2
-    assert len(res_data["native"]) == 2
-    assert res_data["english"][0]["is_gibberish"] == 1
-    assert res_data["english"][0]["category"] == "Generic"
-    assert res_data["english"][1]["is_gibberish"] == 0
+    assert "data" in res_data
+    assert len(res_data["data"]) == 2
+    assert res_data["data"][0]["english"]["is_gibberish"] == 1
+    assert res_data["data"][0]["english"]["category"] == "Generic"
+    assert res_data["data"][1]["english"]["is_gibberish"] == 0
+
 
 
 

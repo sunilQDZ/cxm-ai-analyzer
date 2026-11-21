@@ -21,11 +21,12 @@ from schemas import (
 
 
 def test_comment_item_schema():
-    valid = CommentItem(id="c1", client_id=10, survey_id=100, comments="Great service")
+    valid = CommentItem(id="c1", client_id=10, survey_id=100, comments="Great service", language="ar")
     assert valid.id == "c1"
     assert valid.client_id == 10
     assert valid.survey_id == 100
     assert valid.comments == "Great service"
+    assert valid.language == "ar"
 
     # Test optional parameters defaulting to None and ""
     minimal = CommentItem(id="c2")
@@ -33,19 +34,19 @@ def test_comment_item_schema():
     assert minimal.client_id is None
     assert minimal.survey_id is None
     assert minimal.comments == ""
+    assert minimal.language is None
 
 
 def test_inference_request_schema():
-    item = CommentItem(id="c1", client_id=1, survey_id=1, comments="Test comment")
-    req = InferenceRequest(data=[item], language="ar")
+    item = CommentItem(id="c1", client_id=1, survey_id=1, comments="Test comment", language="ar")
+    req = InferenceRequest(data=[item])
     assert len(req.data) == 1
     assert req.data[0].id == "c1"
-    assert req.language == "ar"
+    assert req.data[0].language == "ar"
 
     # Test empty list allows instantiation
     req_empty = InferenceRequest(data=[])
     assert len(req_empty.data) == 0
-    assert req_empty.language is None
 
 
 def test_insight_prediction_item_schema():
@@ -81,11 +82,13 @@ def test_insight_response_schema():
         observation="Observed issue",
         recommendations="Fix it"
     )
-    res = InsightResponse(english=[prediction], native=[prediction])
-    assert len(res.english) == 1
-    assert len(res.native) == 1
-    assert res.english[0].category == "Product"
-    assert res.native[0].sentiment == "Negative"
+    res = InsightResponse(data=[{"english": prediction, "ar": prediction}])
+    assert len(res.data) == 1
+    assert "english" in res.data[0]
+    assert "ar" in res.data[0]
+    assert res.data[0]["english"].category == "Product"
+    assert res.data[0]["ar"].sentiment == "Negative"
+
 
 
 

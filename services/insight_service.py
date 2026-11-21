@@ -40,7 +40,9 @@ def generate_insight(
     1. Auto-detects source language of comment or uses explicit language code (e.g. 'ar', 'fr', 'de', 'es', 'hi').
     2. Translates to English for maximum LLM reasoning, emotion & taxonomy accuracy.
     3. Back-translates Observation, Recommendations, Keywords & Sentiment to the original native language.
-    4. If return_dual=True, returns {"english": {...}, "native": {...}}. Otherwise returns the native/primary dict.
+    4. If return_dual=True:
+       - If non-English: returns {"english": {...}, "<lang_code>": {...}}
+       - If English/Hinglish: returns {"english": {...}}
     5. 100% domain-agnostic: works across Banking, Healthcare, Logistics, E-Commerce, Retail, etc.
     """
     start = time.time()
@@ -68,10 +70,13 @@ def generate_insight(
             "keywords": "database offline",
             "observation": "Database service is currently unreachable or timing out. Master categories could not be retrieved.",
             "recommendations": "Please verify MySQL database connectivity and network access.",
-            "processing_time_ms": round(elapsed * 1000, 2),
         }
         if return_dual:
-            return {"english": db_err_item, "native": db_err_item}
+            out = {"english": db_err_item}
+            lang_key = language.strip().lower() if language and language.strip() else "en"
+            if lang_key not in ["en", "english", "auto"]:
+                out[lang_key] = db_err_item
+            return out
         return db_err_item
 
     is_gibrish = is_gibrish_comment(safe_comment, category_mapping=category_mapping)
@@ -92,10 +97,13 @@ def generate_insight(
             "keywords": "gibberish",
             "observation": "Comment appears to be gibberish or unreadable text.",
             "recommendations": "Please provide a valid and readable customer comment.",
-            "processing_time_ms": round(elapsed * 1000, 2),
         }
         if return_dual:
-            return {"english": gib_item, "native": gib_item}
+            out = {"english": gib_item}
+            lang_key = language.strip().lower() if language and language.strip() else "en"
+            if lang_key not in ["en", "english", "auto"]:
+                out[lang_key] = gib_item
+            return out
         return gib_item
 
     # 2. Text Normalization Check
@@ -115,10 +123,13 @@ def generate_insight(
             "keywords": "invalid",
             "observation": "Invalid comment provided.",
             "recommendations": "Please provide a valid comment.",
-            "processing_time_ms": round(elapsed * 1000, 2),
         }
         if return_dual:
-            return {"english": inv_item, "native": inv_item}
+            out = {"english": inv_item}
+            lang_key = language.strip().lower() if language and language.strip() else "en"
+            if lang_key not in ["en", "english", "auto"]:
+                out[lang_key] = inv_item
+            return out
         return inv_item
 
     # 3. Universal Auto-Detection & Translation to English
@@ -153,12 +164,14 @@ def generate_insight(
             "keywords": extract_keywords(english_comment, fb_cat, fb_sub),
             "observation": "LLM model is currently offline or unreachable.",
             "recommendations": "Please ensure the LLM service is running and try again.",
-            "processing_time_ms": round(elapsed * 1000, 2),
         }
         fb_native = dict(fb_en)
         fb_native["comments"] = normalized
         if return_dual:
-            return {"english": fb_en, "native": fb_native}
+            out = {"english": fb_en}
+            if native_lang and native_lang not in ["en", "english", "auto"]:
+                out[native_lang] = fb_native
+            return out
         return fb_native
 
     # 5. Extract & Standardize LLM output
@@ -226,57 +239,56 @@ def generate_insight(
         "keywords": english_keywords,
         "observation": observation[:600],
         "recommendations": recommendations[:600],
-        "processing_time_ms": round(elapsed * 1000, 2),
     }
 
     # 9. Universal Round-Trip Back-Translation to Customer's Original / Target Language
     target_lang = native_lang if native_lang else detected_lang
-    if target_lang and target_lang not in ["en", "auto"]:
+    is_native = bool(target_lang and target_lang not in ["en", "english", "auto"])
+
+    if is_native:
         native_observation = translate_back_to_original(observation, target_lang)
         native_recommendations = translate_back_to_original(recommendations, target_lang)
         native_keywords = translate_back_to_original(english_keywords, target_lang)
         native_sentiment, native_emotion, native_priority = localize_metadata(sentiment, emotion, priority, target_lang)
-    else:
-        native_observation = observation
-        native_recommendations = recommendations
-        native_keywords = english_keywords
-        native_sentiment, native_emotion, native_priority = sentiment, emotion, priority
 
-    native_item = {
-        "id": safe_comment_id,
-        "comments": normalized,
-        "is_gibberish": 0,
-        "category": category,
-        "sub_category": sub_category,
-        "sentiment": native_sentiment,
-        "emotion": native_emotion,
-        "priority": native_priority,
-        "keywords": native_keywords,
-        "observation": native_observation[:600],
-        "recommendations": native_recommendations[:600],
-        "processing_time_ms": round(elapsed * 1000, 2),
-    }
+        native_item = {
+            "id": safe_comment_id,
+            "comments": normalized,
+            "is_gibberish": 0,
+            "category": category,
+            "sub_category": sub_category,
+            "sentiment": native_sentiment,
+            "emotion": native_emotion,
+            "priority": native_priority,
+            "keywords": native_keywords,
+            "observation": native_observation[:600],
+            "recommendations": native_recommendations[:600],
+        }
+    else:
+        native_item = english_item
 
     logger.info(f"[VOC COMPLETED] ID: {safe_comment_id} | Lang: {target_lang} | Time: {elapsed:.2f}s")
 
     if return_dual:
-        return {
-            "english": english_item,
-            "native": native_item
-        }
+        out = {"english": english_item}
+        if is_native:
+            out[target_lang] = native_item
+        return out
 
     return native_item
 
 
 
+
 def process_comments_batch(
-    comments_list: List[Tuple[Any, Any, Optional[Any], Optional[Any]]],
+    comments_list: List[Tuple[Any, Any, Optional[Any], Optional[Any], Optional[str]]],
     language: Optional[str] = None,
     return_dual: bool = False
 ) -> Any:
     """
-    Batch processing coordinator for VOC comments array. Each element is (comment, comment_id, client_id, survey_id).
-    Supports optional language parameter and return_dual=True (which returns {"english": [...], "native": [...]}).
+    Batch processing coordinator for VOC comments array.
+    Each element is (comment, comment_id, client_id, survey_id) or (comment, comment_id, client_id, survey_id, lang).
+    Supports optional language parameter and return_dual=True (which returns a list of dual dicts per item).
     """
     total_items = len(comments_list)
     logger.info(f"[BATCH STARTED] Processing {total_items} VOC item(s)... | Lang: {language} | Dual: {return_dual}")
@@ -284,6 +296,7 @@ def process_comments_batch(
     def _fallback_item(item):
         cid_str = str(item[1]) if item[1] is not None else "0"
         comm_str = str(item[0]) if item[0] is not None else ""
+        item_lang = item[4] if len(item) > 4 and item[4] else language
         fb = {
             "id": cid_str,
             "comments": comm_str,
@@ -296,10 +309,13 @@ def process_comments_batch(
             "keywords": "generic",
             "observation": "LLM failed to generate output.",
             "recommendations": "Please retry the request.",
-            "processing_time_ms": 0,
         }
         if return_dual:
-            return {"english": fb, "native": fb}
+            out = {"english": fb}
+            lang_key = item_lang.strip().lower() if item_lang and item_lang.strip() else "en"
+            if lang_key not in ["en", "english", "auto"]:
+                out[lang_key] = fb
+            return out
         return fb
 
     if BATCH_MAX_WORKERS <= 1 or len(comments_list) <= 1:
@@ -309,24 +325,20 @@ def process_comments_batch(
             comment_id = str(item[1]) if item[1] is not None else "0"
             cid = item[2] if len(item) > 2 else None
             sid = item[3] if len(item) > 3 else None
+            item_lang = item[4] if len(item) > 4 and item[4] else language
             try:
                 results.append(generate_insight(
                     comment,
                     comment_id,
                     client_id=cid,
                     survey_id=sid,
-                    language=language,
+                    language=item_lang,
                     return_dual=return_dual
                 ))
             except Exception as e:
                 logger.error(f"Error processing {comment_id}: {str(e)[:80]}")
                 results.append(_fallback_item(item))
 
-        if return_dual:
-            return {
-                "english": [r["english"] for r in results],
-                "native": [r["native"] for r in results]
-            }
         return results
 
     indexed_results = {}
@@ -338,13 +350,14 @@ def process_comments_batch(
             comment_id = str(item[1]) if item[1] is not None else "0"
             cid = item[2] if len(item) > 2 else None
             sid = item[3] if len(item) > 3 else None
+            item_lang = item[4] if len(item) > 4 and item[4] else language
             fut = executor.submit(
                 generate_insight,
                 comment,
                 comment_id,
                 client_id=cid,
                 survey_id=sid,
-                language=language,
+                language=item_lang,
                 return_dual=return_dual
             )
             future_map[fut] = index
@@ -360,12 +373,8 @@ def process_comments_batch(
                 indexed_results[index] = _fallback_item(item)
 
     ordered_results = [indexed_results[i] for i in range(len(comments_list))]
-    if return_dual:
-        return {
-            "english": [r["english"] for r in ordered_results],
-            "native": [r["native"] for r in ordered_results]
-        }
     return ordered_results
+
 
 
 # Backward compatibility alias

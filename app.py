@@ -7,13 +7,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from services.logging_service import setup_file_logging
-from db_cat_1 import (
-    OLLAMA_MODEL,
-    OLLAMA_TIMEOUT,
-    startup_logic,
-    shutdown_logic,
-)
+from config import OLLAMA_MODEL, OLLAMA_TIMEOUT
+from services.llm_service import startup_logic, shutdown_logic
 from routes import router, API_TOKEN
+
 
 # Initialize file logger
 setup_file_logging()

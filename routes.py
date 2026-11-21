@@ -79,22 +79,23 @@ def generate(
             detail="data list must not be empty."
         )
 
-    req_language = request.language.strip() if request.language and request.language.strip() else None
-
-    logger.info("Processing /generate request with %d VOC items | Language: %s", len(request.data), req_language)
-
     if len(request.data) == 1:
         single = request.data[0]
+        single_lang = single.language.strip() if single.language and single.language.strip() else None
         dual_insight = generate_insight(
             comment=single.comments or "",
             comment_id=str(single.id) if single.id is not None else "0",
             client_id=single.client_id,
             survey_id=single.survey_id,
-            language=req_language,
+            language=single_lang,
             return_dual=True
         )
-        english_results = [InsightPredictionItem(**dual_insight["english"])]
-        native_results = [InsightPredictionItem(**dual_insight["native"])]
+        # Format prediction items in dict
+        item_dict = {
+            lang_key: InsightPredictionItem(**pred)
+            for lang_key, pred in dual_insight.items()
+        }
+        results = [item_dict]
     else:
         batch_tuples = [
             (
@@ -102,17 +103,24 @@ def generate(
                 str(item.id) if item.id is not None else "0",
                 item.client_id,
                 item.survey_id,
+                item.language.strip() if item.language and item.language.strip() else None,
             )
             for item in request.data
         ]
-        dual_insights = process_batch_insights(batch_tuples, language=req_language, return_dual=True)
-        english_results = [InsightPredictionItem(**res) for res in dual_insights["english"]]
-        native_results = [InsightPredictionItem(**res) for res in dual_insights["native"]]
+        dual_insights_list = process_batch_insights(batch_tuples, return_dual=True)
+        results = [
+            {
+                lang_key: InsightPredictionItem(**pred)
+                for lang_key, pred in item_dual.items()
+            }
+            for item_dual in dual_insights_list
+        ]
 
     elapsed = time.time() - api_start
     logger.info("Successfully processed %d comments in %.2fs", len(request.data), elapsed)
 
-    return InsightResponse(english=english_results, native=native_results)
+    return InsightResponse(data=results)
+
 
 
 

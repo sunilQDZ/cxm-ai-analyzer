@@ -13,9 +13,16 @@ import re
 import urllib.parse
 import urllib.request
 import json
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Optional
+
+try:
+    from deep_translator import GoogleTranslator
+    HAS_DEEP_TRANSLATOR = True
+except ImportError:
+    HAS_DEEP_TRANSLATOR = False
 
 logger = logging.getLogger("cx_api")
+
 
 # In-memory LRU cache to avoid re-translating identical phrases within a session
 _TRANSLATION_CACHE: Dict[str, str] = {}
@@ -74,8 +81,23 @@ def detect_and_translate_to_english(text: str, source_lang: Optional[str] = None
     if cache_key in _TRANSLATION_CACHE:
         return _TRANSLATION_CACHE[cache_key], explicit_lang or "cached"
 
+    # 1. Primary: Use deep-translator library
+    if HAS_DEEP_TRANSLATOR:
+        try:
+            translated = GoogleTranslator(source=sl_param, target="en").translate(clean_text)
+            if translated:
+                if len(_TRANSLATION_CACHE) < MAX_CACHE_SIZE:
+                    _TRANSLATION_CACHE[cache_key] = translated
+                detected_lang = explicit_lang if explicit_lang else "auto"
+                logger.info(f"[TRANSLATE-IN-LIB] Lang='{detected_lang}' | Length={len(clean_text)}")
+                return translated, detected_lang.lower()
+        except Exception as e:
+            logger.warning(f"deep_translator translate to English failed: {e}")
+
+    # 2. Fallback: direct HTTP API
     try:
         url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={sl_param}&tl=en&dt=t&q={urllib.parse.quote(clean_text)}"
+
         req = urllib.request.Request(
             url,
             headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -101,7 +123,7 @@ def detect_and_translate_to_english(text: str, source_lang: Optional[str] = None
 
 def translate_back_to_original(text: str, target_lang: str) -> str:
     """
-    Translates an English text (Observation, Recommendation, Keywords) back into target_lang.
+    Translates an English text (Observation, Recommendation, Keywords) back into target_lang using deep_translator.
     If target_lang is 'en', returns text directly with zero network overhead.
     """
     if not text or not str(text).strip() or not target_lang or target_lang in ["en", "auto"]:
@@ -112,6 +134,18 @@ def translate_back_to_original(text: str, target_lang: str) -> str:
     if cache_key in _TRANSLATION_CACHE:
         return _TRANSLATION_CACHE[cache_key]
 
+    # 1. Primary: Use deep-translator library
+    if HAS_DEEP_TRANSLATOR:
+        try:
+            translated = GoogleTranslator(source="en", target=target_lang).translate(clean_text)
+            if translated:
+                if len(_TRANSLATION_CACHE) < MAX_CACHE_SIZE:
+                    _TRANSLATION_CACHE[cache_key] = translated
+                return translated
+        except Exception as e:
+            logger.warning(f"deep_translator back-translation to '{target_lang}' failed: {e}")
+
+    # 2. Fallback: direct HTTP API
     try:
         url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl={target_lang}&dt=t&q={urllib.parse.quote(clean_text)}"
         req = urllib.request.Request(
@@ -130,6 +164,7 @@ def translate_back_to_original(text: str, target_lang: str) -> str:
     except Exception as e:
         logger.warning(f"Back-translation to '{target_lang}' failed: {e}")
         return clean_text
+
 
 
 def localize_metadata(

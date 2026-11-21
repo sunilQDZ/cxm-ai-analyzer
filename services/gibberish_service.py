@@ -21,8 +21,12 @@ def is_gibrish_comment(text, category_mapping: Optional[Dict[str, List[str]]] = 
     # Indic unicode ranges: \u0900-\u0DFF, Arabic unicode ranges: \u0600-\u06FF, \u0750-\u077F, \u08A0-\u08FF
     if re.search(r'[\u0900-\u0DFF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]', cleaned):
         non_ascii_clean = re.sub(r'[^\w\s]', '', cleaned).strip()
+        # Check for repetitive mashing (e.g. سسسسسس صصصصص)
+        if len(non_ascii_clean) >= 4 and re.search(r'(.)\1{3,}', non_ascii_clean):
+            return 1
         if len(non_ascii_clean) >= 2:
             return 0
+
 
     lower = cleaned.lower()
 

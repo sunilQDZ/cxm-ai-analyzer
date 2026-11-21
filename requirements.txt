@@ -10,3 +10,4 @@ sqlalchemy
 scipy
 numpy
 loguru
+deep-translator

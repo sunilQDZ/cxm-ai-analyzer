@@ -39,7 +39,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "90"))
 OLLAMA_NUM_THREADS = int(os.getenv("OLLAMA_NUM_THREADS", "4"))
 OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
-OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "300"))
+OLLAMA_NUM_PREDICT = int(os.getenv("OLLAMA_NUM_PREDICT", "180"))
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "30m")
 
 # ─────────────────────────────────────────────
@@ -61,7 +61,7 @@ MYSQL_CONNECT_TIMEOUT = int(os.getenv("MYSQL_CONNECT_TIMEOUT", "10"))
 # ─────────────────────────────────────────────
 # CACHING & CONCURRENCY
 # ─────────────────────────────────────────────
-CATEGORY_CACHE_TTL_SECONDS = int(os.getenv("CATEGORY_CACHE_TTL_SECONDS", "30"))
+CATEGORY_CACHE_TTL_SECONDS = int(os.getenv("CATEGORY_CACHE_TTL_SECONDS", "300"))
 BATCH_MAX_WORKERS = int(os.getenv("BATCH_MAX_WORKERS", "1"))
 
 # ─────────────────────────────────────────────

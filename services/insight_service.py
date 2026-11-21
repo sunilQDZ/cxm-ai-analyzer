@@ -246,10 +246,18 @@ def generate_insight(
     is_native = bool(target_lang and target_lang not in ["en", "english", "auto"])
 
     if is_native:
-        native_observation = translate_back_to_original(observation, target_lang)
-        native_recommendations = translate_back_to_original(recommendations, target_lang)
-        native_keywords = translate_back_to_original(english_keywords, target_lang)
+        # Run Observation, Recommendation and Keywords back-translation in parallel
+        with ThreadPoolExecutor(max_workers=3) as tr_exec:
+            fut_obs = tr_exec.submit(translate_back_to_original, observation, target_lang)
+            fut_rec = tr_exec.submit(translate_back_to_original, recommendations, target_lang)
+            fut_kw = tr_exec.submit(translate_back_to_original, english_keywords, target_lang)
+
+            native_observation = fut_obs.result()
+            native_recommendations = fut_rec.result()
+            native_keywords = fut_kw.result()
+
         native_sentiment, native_emotion, native_priority = localize_metadata(sentiment, emotion, priority, target_lang)
+
 
         native_item = {
             "id": safe_comment_id,

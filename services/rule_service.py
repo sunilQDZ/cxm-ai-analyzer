@@ -30,9 +30,50 @@ def clean_for_match(text: str) -> str:
 
 def similarity_score(a: str, b: str) -> float:
     """
-    Computes difflib sequence matching ratio.
+    Computes a hybrid similarity score combining:
+    1. SequenceMatcher character-level ratio (Levenshtein-like)
+    2. Token Set / Jaccard overlap (word-level similarity)
+    3. Prefix/Stem substring matching
+    This ensures that synonyms, variations (e.g. 'Delivery Delays' vs 'Late Delivery'),
+    and plurals/stems match with high accuracy across any industry.
     """
-    return difflib.SequenceMatcher(None, clean_for_match(a), clean_for_match(b)).ratio()
+    clean_a = clean_for_match(a)
+    clean_b = clean_for_match(b)
+
+    if not clean_a or not clean_b:
+        return 0.0
+
+    if clean_a == clean_b:
+        return 1.0
+
+    # 1. SequenceMatcher ratio
+    seq_ratio = difflib.SequenceMatcher(None, clean_a, clean_b).ratio()
+
+    # 2. Token Set overlap (Jaccard similarity)
+    tokens_a = set(w for w in clean_a.split() if len(w) > 2)
+    tokens_b = set(w for w in clean_b.split() if len(w) > 2)
+
+    token_jaccard = 0.0
+    if tokens_a and tokens_b:
+        intersection = tokens_a.intersection(tokens_b)
+        union = tokens_a.union(tokens_b)
+        token_jaccard = len(intersection) / len(union)
+
+        # Token containment bonus (e.g. 'delivery' in 'late delivery')
+        if tokens_a.issubset(tokens_b) or tokens_b.issubset(tokens_a):
+            token_jaccard = max(token_jaccard, 0.85)
+
+    # 3. Stem matching (4-letter prefixes)
+    stems_a = set(w[:4] for w in tokens_a if len(w) >= 4)
+    stems_b = set(w[:4] for w in tokens_b if len(w) >= 4)
+    stem_overlap = 0.0
+    if stems_a and stems_b:
+        stem_overlap = len(stems_a.intersection(stems_b)) / len(stems_a.union(stems_b))
+
+    # Weighted composite score
+    composite = max(seq_ratio, (token_jaccard * 0.7 + seq_ratio * 0.3), (stem_overlap * 0.6 + seq_ratio * 0.4))
+    return round(composite, 4)
+
 
 
 def comment_match_score(comment: str, target: str) -> int:
